@@ -23,16 +23,17 @@ import heapq
 import itertools
 import threading
 import weakref
+from array import array
 from collections import deque
-from collections.abc import Callable, Hashable, Iterator
+from collections.abc import Callable, Hashable, Iterator, Sequence
 from typing import Any, Optional, TypeVar, Union, overload
 
 T = TypeVar("T")
 _A = TypeVar("_A", bound=ast.AST)
 _B = TypeVar("_B", bound=ast.AST)
 
-# tree -> {node type: ([walk positions], [nodes])}, the root itself left out (position 0, see nodes_of)
-_INDEX: "weakref.WeakKeyDictionary[ast.AST, dict[type, tuple[list[int], list[ast.AST]]]]" = weakref.WeakKeyDictionary()
+# tree -> {node type: (walk positions, [nodes])}, the root itself left out (position 0, see nodes_of). The positions are an unsigned 32-bit array: a list of ints costs 36 bytes a node (the int object and its slot), an array 4.
+_INDEX: "weakref.WeakKeyDictionary[ast.AST, dict[type, tuple[Sequence[int], list[ast.AST]]]]" = weakref.WeakKeyDictionary()
 # tree -> {key: value}
 _MEMO: "weakref.WeakKeyDictionary[ast.AST, dict[Hashable, Any]]" = weakref.WeakKeyDictionary()
 # tree or subtree root -> every node below it in ``ast.walk`` order, the root itself left out (a value referencing its key would keep the tree alive)
@@ -141,17 +142,17 @@ def parent_of(tree: ast.Module, node: ast.AST) -> "Optional[ast.AST]":
     return parents[id(node)] or tree
 
 
-def _index(tree: ast.AST) -> "dict[type, tuple[list[int], list[ast.AST]]]":
+def _index(tree: ast.AST) -> "dict[type, tuple[Sequence[int], list[ast.AST]]]":
     with _LOCK:
         hit = _INDEX.get(tree)
     if hit is not None:
         return hit
-    by_type: "dict[type, tuple[list[int], list[ast.AST]]]" = {}
+    by_type: "dict[type, tuple[Sequence[int], list[ast.AST]]]" = {}
     nodes = _descendants(tree)
     for pos, node in enumerate(nodes, start=1):  # position 0 is the root: see nodes_of
         entry = by_type.get(type(node))
         if entry is None:
-            entry = by_type[type(node)] = ([], [])
+            entry = by_type[type(node)] = (array("I"), [])
         entry[0].append(pos)
         entry[1].append(node)
     with _LOCK:

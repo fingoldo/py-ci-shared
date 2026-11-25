@@ -39,6 +39,12 @@ _PYTHON_SUFFIXES = frozenset({".py", ".pyi", ".pyw"})
 _CACHE: dict[str, tuple[bytes, str, ast.Module]] = {}
 _LOCK = threading.Lock()
 
+# resolved path -> estimated resident bytes of the entry (its text, its tree and what ``node_index`` derives from the tree: ``memory.TREE_BYTES_PER_SOURCE_BYTE`` per character), and their sum. When the sum passes the budget
+# (``memory.parse_cache_budget_bytes``) the whole cache is dropped, as the bytes cache below is: the trees are cheap to rebuild and a process that scanned two corpora holds gigabytes of them (mlframe: 2.8 GB of trees and 1.3 GB of
+# derived tables for src + tests), which a pool of workers multiplies.
+_COST: dict[str, int] = {}
+_COST_TOTAL = 0
+
 # path as given -> (stat signature, time it was read, cache key, digest). A stable file is recognised by its stat alone, without reading, hashing or resolving it again:
 # a gate suite asks for each of a few thousand files tens of times. The signature is trusted only when the file's mtime is older than the moment it was read by more than
 # ``_RACY_NS`` (the rule git applies to its index): a file rewritten inside the timestamp granularity of the read would otherwise keep its old signature, and falls to the
@@ -290,7 +296,22 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
         text = _decode(p, raw)
         tree = _parse_text(p, text)
         _CACHE[key] = (digest, text, tree)
+        over_budget = _note_cost(key, len(text))
+    if over_budget:
+        clear_parse_cache()  # the caller still holds its tree; only the next reader parses again
     return text, tree
+
+
+def _note_cost(key: str, chars: int) -> bool:
+    """Record the estimated resident size of the entry *key* (called with ``_LOCK`` held); ``True`` when the cache now holds more than its budget."""
+    from .memory import TREE_BYTES_PER_SOURCE_BYTE, parse_cache_budget_bytes
+
+    global _COST_TOTAL
+    cost = int(chars) * TREE_BYTES_PER_SOURCE_BYTE
+    _COST_TOTAL += cost - _COST.get(key, 0)
+    _COST[key] = cost
+    budget = parse_cache_budget_bytes()
+    return budget is not None and _COST_TOTAL > budget
 
 
 def parse_text(text: str, filename: str = "<unknown>") -> ast.Module:
@@ -319,11 +340,13 @@ def clear_parse_cache() -> None:
     """Drop every cached tree and what was derived from it (frees memory in long-lived processes; correctness never depends on it)."""
     from . import corpus, node_index
 
-    global _BYTES_TOTAL
+    global _BYTES_TOTAL, _COST_TOTAL
     with _LOCK:
         _BYTES.clear()
         _BYTES_TOTAL = 0
         _CACHE.clear()
+        _COST.clear()
+        _COST_TOTAL = 0
         _FAST.clear()
         _RESOLVED.clear()
         _TEXT_TREES.clear()

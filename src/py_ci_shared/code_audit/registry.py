@@ -603,6 +603,43 @@ def _select_scanners(checks: Optional[Iterable[str]]) -> list[str]:
     return selected
 
 
+def _corpus_source_bytes(root: Path, exclude_dirs: frozenset[str]) -> int:
+    """Bytes of Python source under *root* that a scanner would parse (what one worker holds, 55 times over, once it has scanned)."""
+    total = 0
+    for path in _iter_py_files(root, exclude_dirs):
+        try:
+            total += path.stat().st_size
+        except OSError:  # a file that vanished or cannot be read is skipped by the scanners as well
+            continue
+    return total
+
+
+def _workers_for_memory(max_workers: int, root: Path, exclude_dirs: frozenset[str]) -> int:
+    """The worker count the host's free memory allows, at most *max_workers*; below 2 the caller runs in this process.
+
+    Every worker parses and indexes the corpus for itself (workers share no memory) and a parsed corpus costs ``memory.TREE_BYTES_PER_SOURCE_BYTE`` times its source (mlframe: 37.7 MB of ``src`` is 1.15 GB of trees and
+    0.5 GB of derived tables in each worker). This process's own parsed corpus is of no use to them and is released first: a run beside a test session that had scanned ``src`` and ``tests`` (5.5 GB resident, 4.1 GB of it
+    trees and tables) started four workers of about 1 GB each on a 16 GB host and ran it out of memory. ``PY_CI_SHARED_AUDIT_MAX_WORKERS`` caps the count (``1``: no pool); an unknown host memory leaves *max_workers* as it is.
+    """
+    import os
+
+    from .._core import memory
+    from .._core.source import clear_parse_cache
+
+    raw = os.environ.get("PY_CI_SHARED_AUDIT_MAX_WORKERS", "").strip()
+    if raw.isdigit() and int(raw) > 0:
+        max_workers = min(max_workers, int(raw))
+    if max_workers < 2:
+        return max_workers
+    clear_parse_cache()
+    fit = memory.workers_that_fit(_corpus_source_bytes(root, exclude_dirs))
+    if fit is None:
+        return max_workers
+    if fit < max_workers:
+        logger.info("code_audit: %d of %d workers fit in the free memory (%d MiB available); the rest of the scanners run with them", fit, max_workers, (memory.available_memory_bytes() or 0) >> 20)
+    return min(max_workers, fit)
+
+
 def _run_scanners_parallel(
     selected: list[str], root: Path, exclude_dirs: frozenset[str], consumer_roots: tuple[Path, ...] = ()
 ) -> tuple[list[Finding], dict[str, str]]:
@@ -632,6 +669,11 @@ def _run_scanners_parallel(
             local_only.append(name)
     out: list[Finding] = []
     failed: dict[str, str] = {}
+    if tasks:
+        max_workers = _workers_for_memory(max_workers, root, exclude_dirs)
+        if max_workers < 2:  # not even two workers fit beside this process: one pool of one is just a slower in-process run
+            local_only.extend(name for name, *_ in tasks)
+            tasks = []
     if tasks:
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as pool:
             for (name, *_), result in zip(tasks, pool.map(_run_one, tasks)):
