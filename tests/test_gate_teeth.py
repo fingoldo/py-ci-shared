@@ -34,6 +34,7 @@ CANARY_DIR = Path(__file__).resolve().parent / "canary"
 SUFFIX = ".canary"
 BOM = b"\xef\xbb\xbf"
 
+
 def _files(d: Path) -> list[Path]:
     return sorted(p for p in d.rglob("*" + SUFFIX) if p.is_file())
 
