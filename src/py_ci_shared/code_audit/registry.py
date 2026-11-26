@@ -603,15 +603,17 @@ def _select_scanners(checks: Optional[Iterable[str]]) -> list[str]:
     return selected
 
 
+def _size_or_zero(path: Path) -> int:
+    """Size of *path* in bytes; 0 for a file that vanished or cannot be read, which the scanners skip as well."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
 def _corpus_source_bytes(root: Path, exclude_dirs: frozenset[str]) -> int:
     """Bytes of Python source under *root* that a scanner would parse (what one worker holds, 55 times over, once it has scanned)."""
-    total = 0
-    for path in _iter_py_files(root, exclude_dirs):
-        try:
-            total += path.stat().st_size
-        except OSError:  # a file that vanished or cannot be read is skipped by the scanners as well
-            continue
-    return total
+    return sum(_size_or_zero(path) for path in _iter_py_files(root, exclude_dirs))
 
 
 def _workers_for_memory(max_workers: int, root: Path, exclude_dirs: frozenset[str]) -> int:
@@ -640,23 +642,12 @@ def _workers_for_memory(max_workers: int, root: Path, exclude_dirs: frozenset[st
     return min(max_workers, fit)
 
 
-def _run_scanners_parallel(
-    selected: list[str], root: Path, exclude_dirs: frozenset[str], consumer_roots: tuple[Path, ...] = ()
-) -> tuple[list[Finding], dict[str, str]]:
-    """Run the selected scanners across a process pool; any the pool cannot take are run in this process.
+_PoolTask = tuple[str, Optional[Callable[..., list[Finding]]], Path, frozenset[str], dict]
 
-    Returns the findings and a ``{scanner name: error}`` map of the scanners that raised.
-    """
-    import concurrent.futures
 
-    # See _MIN_SCANNERS_PER_WORKER: cap by physical cores AND by "enough scanners per
-    # worker to amortize its fixed spawn+import+re-parse cost", never by the raw
-    # scanner count (which used to spawn one interpreter per scanner on a big machine).
-    max_workers = max(2, min(physical_cpu_count(), len(selected) // MIN_SCANNERS_PER_WORKER))
-    # A worker resolves a built-in from its own re-imported registry (nothing to pickle); a
-    # scanner registered at runtime by the parent exists only here, so its callable is sent.
-    # An unpicklable one (a closure, a bound method) can't cross at all - it runs in-process.
-    tasks: list[tuple[str, Optional[Callable[..., list[Finding]]], Path, frozenset[str], dict]] = []
+def _plan_pool_tasks(selected: list[str], root: Path, exclude_dirs: frozenset[str], consumer_roots: tuple[Path, ...]) -> tuple[list[_PoolTask], list[str]]:
+    """Split *selected* into the tasks a worker can take and the names that must run in this process."""
+    tasks: list[_PoolTask] = []
     local_only: list[str] = []
     for name in selected:
         fn = _SCANNERS[name]
@@ -667,6 +658,39 @@ def _run_scanners_parallel(
             tasks.append((name, fn, root, exclude_dirs, extra))
         else:
             local_only.append(name)
+    return tasks, local_only
+
+
+def _collect_pool_results(tasks: list[_PoolTask], max_workers: int, out: list[Finding], failed: dict[str, str], local_only: list[str]) -> None:
+    """Run *tasks* on a process pool, appending findings to *out*, errors to *failed* and pool-refused names to *local_only*."""
+    import concurrent.futures
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as pool:
+        for (name, *_), result in zip(tasks, pool.map(_run_one, tasks)):
+            if result is None:
+                local_only.append(name)
+                continue
+            findings, error = result
+            out.extend(findings)
+            if error is not None:
+                failed[name] = error
+
+
+def _run_scanners_parallel(
+    selected: list[str], root: Path, exclude_dirs: frozenset[str], consumer_roots: tuple[Path, ...] = ()
+) -> tuple[list[Finding], dict[str, str]]:
+    """Run the selected scanners across a process pool; any the pool cannot take are run in this process.
+
+    Returns the findings and a ``{scanner name: error}`` map of the scanners that raised.
+    """
+    # See _MIN_SCANNERS_PER_WORKER: cap by physical cores AND by "enough scanners per
+    # worker to amortize its fixed spawn+import+re-parse cost", never by the raw
+    # scanner count (which used to spawn one interpreter per scanner on a big machine).
+    max_workers = max(2, min(physical_cpu_count(), len(selected) // MIN_SCANNERS_PER_WORKER))
+    # A worker resolves a built-in from its own re-imported registry (nothing to pickle); a
+    # scanner registered at runtime by the parent exists only here, so its callable is sent.
+    # An unpicklable one (a closure, a bound method) can't cross at all - it runs in-process.
+    tasks, local_only = _plan_pool_tasks(selected, root, exclude_dirs, consumer_roots)
     out: list[Finding] = []
     failed: dict[str, str] = {}
     if tasks:
@@ -675,15 +699,7 @@ def _run_scanners_parallel(
             local_only.extend(name for name, *_ in tasks)
             tasks = []
     if tasks:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as pool:
-            for (name, *_), result in zip(tasks, pool.map(_run_one, tasks)):
-                if result is None:
-                    local_only.append(name)
-                else:
-                    findings, error = result
-                    out.extend(findings)
-                    if error is not None:
-                        failed[name] = error
+        _collect_pool_results(tasks, max_workers, out, failed, local_only)
     for name in local_only:
         findings, error = _run_scanner(name, _SCANNERS[name], root, exclude_dirs, extra=_consumer_kwargs(_SCANNERS[name], consumer_roots))
         out.extend(findings)
