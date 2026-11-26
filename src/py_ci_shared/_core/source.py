@@ -37,7 +37,7 @@ _PYTHON_SUFFIXES = frozenset({".py", ".pyi", ".pyw"})
 # rather than accumulating stale ones, so the cache is bounded by the corpus size. Keyed on the bytes, not on
 # mtime and size: a same-size rewrite inside one mtime tick would otherwise serve the old tree.
 _CACHE: dict[str, tuple[bytes, str, ast.Module]] = {}
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()  # re-entrant: _note_cost takes it again while parse_source holds it
 
 # resolved path -> estimated resident bytes of the entry (its text, its tree and what ``node_index`` derives from the tree: ``memory.TREE_BYTES_PER_SOURCE_BYTE`` per character), and their sum. When the sum passes the budget
 # (``memory.parse_cache_budget_bytes``) the whole cache is dropped, as the bytes cache below is: the trees are cheap to rebuild and a process that scanned two corpora holds gigabytes of them (mlframe: 2.8 GB of trees and 1.3 GB of
@@ -308,10 +308,12 @@ def _note_cost(key: str, chars: int) -> bool:
 
     global _COST_TOTAL
     cost = int(chars) * TREE_BYTES_PER_SOURCE_BYTE
-    _COST_TOTAL += cost - _COST.get(key, 0)
-    _COST[key] = cost
+    with _LOCK:
+        _COST_TOTAL += cost - _COST.get(key, 0)
+        _COST[key] = cost
+        total = _COST_TOTAL
     budget = parse_cache_budget_bytes()
-    return budget is not None and _COST_TOTAL > budget
+    return budget is not None and total > budget
 
 
 def parse_text(text: str, filename: str = "<unknown>") -> ast.Module:
