@@ -82,3 +82,13 @@ def test_the_nested_run_does_not_inherit_the_parent_coverage_keys_or_addopts(mon
     assert "PYTEST_ADDOPTS" not in env
     assert env["UNRELATED_KEY"] == "kept"
     assert env[stale_baseline_sweep.OUT_ENV] == str(tmp_path / "out.json")
+
+
+def test_the_nested_run_never_reseeds_and_drops_the_plugin_only_without_gates(tmp_path):
+    """Every nested run disables pytest-randomly; the py_ci_shared plugin goes only where no ``[tool.py_ci_shared]`` table declares gates."""
+    flags = stale_baseline_sweep._nested_plugin_flags(tmp_path)
+    assert "no:randomly" in flags and "no:py_ci_shared" in flags
+
+    (tmp_path / "pyproject.toml").write_text('[tool.py_ci_shared]\ncheck = "on"\n', encoding="utf-8")
+    gated = stale_baseline_sweep._nested_plugin_flags(tmp_path)
+    assert "no:randomly" in gated and "no:py_ci_shared" not in gated
