@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 from collections.abc import Iterator
+from typing import Optional
 
 from ._base import walk_tree, Finding, is_line_exempt, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
@@ -66,9 +67,9 @@ def _own_nodes(func: ast.AST) -> Iterator[ast.AST]:
             stack.extend(child_nodes(node))
 
 
-def _has_any_check(func: ast.AST, asserting_calls: frozenset[str]) -> bool:
+def _has_any_check(func: ast.AST, asserting_calls: frozenset[str], nodes: "Optional[list[ast.AST]]" = None) -> bool:
     """True when the function contains an assert statement or a call that performs a check."""
-    for node in _own_nodes(func):
+    for node in _own_nodes(func) if nodes is None else nodes:
         if isinstance(node, ast.Assert):
             return True
         if isinstance(node, ast.Call):
@@ -84,9 +85,9 @@ def _has_any_check(func: ast.AST, asserting_calls: frozenset[str]) -> bool:
     return False
 
 
-def _swallows_assertion_error(func: ast.AST) -> bool:
+def _swallows_assertion_error(func: ast.AST, nodes: "Optional[list[ast.AST]]" = None) -> bool:
     """True when a handler catches AssertionError (directly or via Exception/bare) and does not re-raise."""
-    for node in _own_nodes(func):
+    for node in _own_nodes(func) if nodes is None else nodes:
         if not isinstance(node, ast.ExceptHandler):
             continue
         caught = {"BaseException"} if node.type is None else {n.id for n in walk_nodes(node.type) if isinstance(n, ast.Name)}
@@ -104,45 +105,49 @@ def _swallows_assertion_error(func: ast.AST) -> bool:
     return False
 
 
-def _every_assert_is_conditional(func: ast.AST) -> bool:
+def _every_assert_is_conditional(func: ast.AST, nodes: "Optional[list[ast.AST]]" = None) -> bool:
     """True when the function has assertions and every one of them is nested inside an `if`."""
-    asserts = [n for n in _own_nodes(func) if isinstance(n, ast.Assert)]
+    nodes = list(_own_nodes(func)) if nodes is None else nodes
+    asserts = [n for n in nodes if isinstance(n, ast.Assert)]
     if not asserts:
         return False
     conditional: set[int] = set()
-    for node in _own_nodes(func):
+    for node in nodes:
         if isinstance(node, ast.If):
             conditional.update(id(inner) for inner in walk_nodes(node) if isinstance(inner, ast.Assert))
     return all(id(a) in conditional for a in asserts)
 
 
-def _has_pass_only_if(func: ast.AST) -> bool:
+def _has_pass_only_if(func: ast.AST, nodes: "Optional[list[ast.AST]]" = None) -> bool:
     """True when an `if` body is exactly `pass` -- a documented expectation written as a no-op."""
-    return any(isinstance(node, ast.If) and len(node.body) == 1 and isinstance(node.body[0], ast.Pass) for node in _own_nodes(func))
+    return any(
+        isinstance(node, ast.If) and len(node.body) == 1 and isinstance(node.body[0], ast.Pass) for node in (_own_nodes(func) if nodes is None else nodes)
+    )
 
 
-def _has_imperative_xfail(func: ast.AST) -> bool:
+def _has_imperative_xfail(func: ast.AST, nodes: "Optional[list[ast.AST]]" = None) -> bool:
     """True when the body calls ``pytest.xfail(...)``, which discards whatever was measured."""
     return any(
         isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "xfail"
         # The receiver must be `pytest` itself: `pytest.mark.xfail` is the declarative marker.
         and isinstance(node.func.value, ast.Name)
-        for node in _own_nodes(func)
+        for node in (_own_nodes(func) if nodes is None else nodes)
     )
 
 
 def _reasons(func: ast.AST, asserting_calls: frozenset[str]) -> list[str]:
     """Every nondiscriminating shape this function exhibits, as short slugs."""
     out: list[str] = []
-    if not _has_any_check(func, asserting_calls):
+    nodes = list(_own_nodes(func))  # walked once; each of the five checks below reads the same nodes
+    if not _has_any_check(func, asserting_calls, nodes):
         out.append("no-assert")
-    if _swallows_assertion_error(func):
+    if _swallows_assertion_error(func, nodes):
         out.append("swallows-assertionerror")
-    if _every_assert_is_conditional(func):
+    if _every_assert_is_conditional(func, nodes):
         out.append("all-asserts-conditional")
-    if _has_pass_only_if(func):
+    if _has_pass_only_if(func, nodes):
         out.append("pass-body-if")
-    if _has_imperative_xfail(func):
+    if _has_imperative_xfail(func, nodes):
         out.append("imperative-xfail")
     return out
 
