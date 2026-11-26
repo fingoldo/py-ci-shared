@@ -6,6 +6,7 @@ Split from test_mutation_teeth.py; see its docstring.
 from __future__ import annotations
 
 import ast
+import logging
 from pathlib import Path
 
 import pytest
@@ -297,6 +298,37 @@ def test_the_worker_pool_tests_carry_a_budget_above_the_global_timeout():
     assert mark.args[0] > 300
 
 
+class _ListHandler(logging.Handler):
+    """Keeps every WARNING record it is given, for a test that reads what a run logged."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@pytest.fixture(scope="module")
+def _clamp_sweep(tmp_path_factory):
+    """One sweep of the clamp fixture, shared by the logging tests: its outcome and the WARNING records it logged while it ran.
+
+    The sweep is deterministic, so two tests asking for the same run need only one of them. Each test still reads what that run logged.
+    """
+    repo = TestSurvivorsAreLoggedAsTheyLand()._repo(tmp_path_factory.mktemp("clamp"))
+    logger = logging.getLogger("py_ci_shared.mutation_teeth")
+    handler = _ListHandler()
+    previous_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    try:
+        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+    return outcome, handler.records
+
+
 class TestSurvivorsAreLoggedAsTheyLand:
     """A sweep over a real suite takes hours, and the survivor list used to be visible only when it ended.
 
@@ -321,26 +353,18 @@ class TestSurvivorsAreLoggedAsTheyLand:
         )
         return repo
 
-    def test_every_survivor_is_logged_once(self, tmp_path, caplog):
-        import logging
+    def test_every_survivor_is_logged_once(self, _clamp_sweep):
+        outcome, records = _clamp_sweep
 
-        repo = self._repo(tmp_path)
-        caplog.set_level(logging.WARNING, logger="py_ci_shared.mutation_teeth")
-        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False)
-
-        logged = [record.getMessage() for record in caplog.records if "mutation survivor" in record.getMessage()]
+        logged = [record.getMessage() for record in records if "mutation survivor" in record.getMessage()]
         assert outcome.survivors, "the fixture must leave at least one survivor, or this test proves nothing"
         assert len(logged) == len(outcome.survivors)
         for survivor in outcome.survivors:
             assert any(str(survivor.line) in message for message in logged)
 
-    def test_a_killed_mutant_is_not_logged(self, tmp_path, caplog):
-        import logging
-
-        repo = self._repo(tmp_path)
-        caplog.set_level(logging.WARNING, logger="py_ci_shared.mutation_teeth")
-        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False)
+    def test_a_killed_mutant_is_not_logged(self, _clamp_sweep):
+        outcome, records = _clamp_sweep
 
         assert outcome.killed > 0
-        logged = [record for record in caplog.records if "mutation survivor" in record.getMessage()]
+        logged = [record for record in records if "mutation survivor" in record.getMessage()]
         assert len(logged) == len(outcome.survivors) < outcome.mutants_run
