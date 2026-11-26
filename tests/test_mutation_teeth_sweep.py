@@ -48,9 +48,9 @@ class TestConcurrencyChangesSpeedAndNothingElse:
         )
         return repo
 
-    def test_four_workers_reach_the_same_verdict_as_one(self, tmp_path):
+    def test_four_workers_reach_the_same_verdict_as_one(self, tmp_path, _clamp_sweep):
         repo = self._repo(tmp_path)
-        serial = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False)
+        serial, _logged = _clamp_sweep  # the same fixture, same arguments, one worker: already swept once this module
         parallel = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=4)
 
         assert serial.mutants_run == parallel.mutants_run
