@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -30,20 +31,35 @@ def _git(repo: Path, *args: str) -> str:
     return result.stdout
 
 
-@pytest.fixture
-def origin_and_clone(tmp_path):
-    """A bare 'remote' with one commit, and a clone of it whose origin/HEAD resolves."""
-    bare = tmp_path / "origin.git"
-    seed = tmp_path / "seed"
+@pytest.fixture(scope="module")
+def _origin_template(tmp_path_factory):
+    """Build the bare 'remote' and its clone once per module; each test copies them (see ``origin_and_clone``)."""
+    base = tmp_path_factory.mktemp("origin_template")
+    bare = base / "origin.git"
+    seed = base / "seed"
     seed.mkdir()
     _git(seed, "init", "-q", "-b", "master")
     (seed / "kept.txt").write_text("upstream content\n", encoding="utf-8")
     _git(seed, "add", "kept.txt")
     _git(seed, "commit", "-q", "-m", "seed")
     subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, capture_output=True, env=git_env())
-    clone = tmp_path / "clone"
+    clone = base / "clone"
     subprocess.run(["git", "clone", "-q", str(bare), str(clone)], check=True, capture_output=True, env=git_env())
     _git(clone, "remote", "set-head", "origin", "master")
+    return base
+
+
+@pytest.fixture
+def origin_and_clone(tmp_path, _origin_template):
+    """A bare 'remote' with one commit, and a clone of it whose origin/HEAD resolves.
+
+    A private copy of the module's template, so a test that pushes to origin cannot leak into the next one. The clone's
+    ``origin`` is re-pointed at the copied bare repository.
+    """
+    base = tmp_path / "origin_base"
+    shutil.copytree(_origin_template, base)
+    clone = base / "clone"
+    _git(clone, "remote", "set-url", "origin", str(base / "origin.git"))
     return clone
 
 
