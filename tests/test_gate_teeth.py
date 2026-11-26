@@ -93,8 +93,22 @@ def _cases():
             yield pytest.param(name, case, id=f"{name}-{case}", marks=marks)
 
 
+@pytest.fixture(scope="session")
+def _plain_outcomes() -> dict:
+    """One run of each gate's plain violation per session, shared by every BOM case that compares against it."""
+    return {}
+
+
+def _plain_outcome(gate: str, cache: dict, tmp_path_factory) -> tuple:
+    """``(corpus dir, failure)`` of the gate on its plain violation, computed once per session."""
+    if gate not in cache:
+        plain_dir = _materialize(gate, "violation", tmp_path_factory.mktemp(f"plain-{gate}"))
+        cache[gate] = (plain_dir, _outcome(lambda: CANARIES[gate].run(plain_dir)))
+    return cache[gate]
+
+
 @pytest.mark.parametrize(("gate", "case"), list(_cases()))
-def test_gate_bites_its_canary(gate: str, case: str, tmp_path: Path) -> None:
+def test_gate_bites_its_canary(gate: str, case: str, tmp_path: Path, tmp_path_factory, _plain_outcomes) -> None:
     c = CANARIES[gate]
     d = _materialize(gate, case, tmp_path)
     failure = _outcome(lambda: c.run(d))
@@ -111,8 +125,7 @@ def test_gate_bites_its_canary(gate: str, case: str, tmp_path: Path) -> None:
         missing = [tok for tok in c.tokens if tok not in failure]
         assert not missing, f"{gate} reported its BOM violation but missed seeded shape(s) {missing}:\n{failure}"
         # The BOM copy must be reported exactly as the plain violation is, not as an unreadable file.
-        plain_dir = _materialize(gate, "violation", tmp_path / "plain")
-        plain = _outcome(lambda: c.run(plain_dir))
+        plain_dir, plain = _plain_outcome(gate, _plain_outcomes, tmp_path_factory)
         assert plain is not None
         assert _normalized(failure, d) == _normalized(
             plain, plain_dir
