@@ -74,3 +74,12 @@ def test_the_gates_table_is_read_from_the_nearest_pyproject_above(tmp_path, dash
     _tree(tmp_path, {"pyproject.toml": _GATES_TABLE})
     nested = _tree(tmp_path / "pkg", {"tests/test_m.py": "def test_m():\n    pass\n"})
     assert runner._gates_configured(nested) is True
+
+
+def test_an_unreadable_pyproject_keeps_the_plugin_and_says_so(tmp_path, dash_absent, caplog):
+    """A pyproject that does not parse is read as declaring gates, so a broken file cannot turn a gate off, and the substitution is logged."""
+    root = _tree(tmp_path, {"pyproject.toml": "[tool.py_ci_shared\nthis is not toml", "tests/test_m.py": "def test_m():\n    pass\n"})
+    with caplog.at_level("WARNING"):
+        flags = runner._plugin_isolation_flags(root)
+    assert _PLUGIN_SWITCH not in flags
+    assert any("unreadable" in record.getMessage() for record in caplog.records)

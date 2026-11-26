@@ -259,18 +259,28 @@ def _tree_mentions_dash(root: str) -> bool:
     return False
 
 
-def _gates_configured(root: Path) -> bool:
-    """Whether the nearest ``pyproject.toml`` at or above *root* has a ``[tool.py_ci_shared]`` table."""
+def _declares_gates(pyproject: Path) -> bool:
+    """Whether *pyproject* has a ``[tool.py_ci_shared]`` table; an unreadable file is logged and counts as declaring them.
+
+    Counting it as declaring gates keeps the plugin on, which is what a nested run did before the plugin could be switched off, so a
+    broken file can never turn a gate off. The substitution is logged at WARNING.
+    """
     from .toml_compat import tomllib
 
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        logger.warning("%s is unreadable (%s: %s); the py_ci_shared plugin stays on for this nested run", pyproject, type(exc).__name__, exc)
+        data = {"tool": {"py_ci_shared": {}}}  # the substitution: read as declaring gates, so the plugin stays on
+    return "py_ci_shared" in data.get("tool", {})
+
+
+def _gates_configured(root: Path) -> bool:
+    """Whether the nearest ``pyproject.toml`` at or above *root* has a ``[tool.py_ci_shared]`` table."""
     for candidate in (root, *root.parents):
         pyproject = candidate / "pyproject.toml"
         if pyproject.is_file():
-            try:
-                data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
-                return True  # unreadable config: keep the plugin, so its own error surfaces as it does in a normal run
-            return "py_ci_shared" in data.get("tool", {})
+            return _declares_gates(pyproject)
     return False
 
 
