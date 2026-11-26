@@ -62,6 +62,11 @@ def test_quiet_is_refused(quiet):
         build_command(["tests/test_a.py", quiet], installed=_all)
 
 
+# A sample under tmp_path has no [tool.py_ci_shared] table, so the plugin adds nothing here but its startup (about 37 s of the
+# 53 s one real run takes on this machine). These tests check the output file and the exit code, not the plugin.
+_NO_GATES = ["-p", "no:py_ci_shared"]
+
+
 def _write_tests(tmp_path: Path, body: str) -> Path:
     path = tmp_path / "test_sample.py"
     path.write_text(body, encoding="utf-8")
@@ -73,7 +78,7 @@ def test_a_passing_run_writes_everything_to_the_file_and_returns_zero(tmp_path):
     sample = _write_tests(tmp_path, "def test_ok():\n    print('visible because of -s')\n")
     out = tmp_path / "out" / "run.txt"
     # A print from an xdist worker is not forwarded to the parent's output, so this checks the serial run that -s is for.
-    assert run_pytest(out, [str(sample), "-n", "0"], cwd=tmp_path) == 0
+    assert run_pytest(out, [str(sample), "-n", "0", *_NO_GATES], cwd=tmp_path) == 0
     text = out.read_text(encoding="utf-8")
     assert "visible because of -s" in text and "test_sample.py" in text
     assert text.rstrip().endswith("exit=0")
@@ -84,7 +89,7 @@ def test_a_failing_run_returns_pytests_code_and_records_it(tmp_path):
     """The exit code of a failing test is returned and written as the last line."""
     sample = _write_tests(tmp_path, "def test_bad():\n    assert 1 == 2\n")
     out = tmp_path / "run.txt"
-    assert run_pytest(out, [str(sample)], cwd=tmp_path) == 1
+    assert run_pytest(out, [str(sample), *_NO_GATES], cwd=tmp_path) == 1
     assert out.read_text(encoding="utf-8").rstrip().endswith("exit=1")
     assert "1 failed" in summary_line(out)
 
@@ -94,7 +99,7 @@ def test_main_prints_the_exit_code_the_summary_and_the_path(tmp_path, capsys, mo
     sample = _write_tests(tmp_path, "def test_ok():\n    pass\n")
     out = tmp_path / "run.txt"
     monkeypatch.chdir(tmp_path)
-    assert main([str(out), str(sample)]) == 0
+    assert main([str(out), str(sample), *_NO_GATES]) == 0
     shown = capsys.readouterr().out
     assert "exit=0" in shown and "1 passed" in shown and str(out) in shown
 
