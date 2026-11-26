@@ -31,6 +31,7 @@ from ._core.paths import display_root
 
 import importlib
 import logging
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -126,6 +127,7 @@ def _run_probe_in_a_copy(
         "no:randomly",
         "-p",
         "no:cacheprovider",
+        *(["-n", "0"] if plugin_autoload and importlib.util.find_spec("xdist") is not None else []),
         *pytest_args,
     ]
     # Plugin autoload costs about 8 s per interpreter start in this environment; a probe that only checks what a copy
