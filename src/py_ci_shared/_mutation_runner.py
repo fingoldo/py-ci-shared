@@ -615,7 +615,11 @@ class _WarmRunner:
         if self.process is None or self.process.poll() is not None:
             return None
         request_id = next(self._ids)
-        request: dict[str, Any] = {"cmd": "run", "id": request_id, "args": [str(t) for t in test_paths] + _pytest_flags() + self.extra_flags + ["-x"]}
+        request: dict[str, Any] = {
+            "cmd": "run",
+            "id": request_id,
+            "args": [str(t) for t in test_paths] + _pytest_flags() + _plugin_isolation_flags(self.sandbox) + self.extra_flags + ["-x"],
+        }
         if check_origin and self.target is not None:
             request["target"] = str(self.target)
             request["names"] = self.module_names
