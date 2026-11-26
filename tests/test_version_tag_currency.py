@@ -4,7 +4,9 @@ no-mocking convention as this package's other tests.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+from typing import Optional
 from pathlib import Path
 
 import pytest
@@ -21,15 +23,45 @@ from py_ci_shared.version_tag_currency import (
 )
 from py_ci_shared._core.git import git_env
 
+_TEMPLATE_ROOT: Optional[Path] = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _template_root(tmp_path_factory):
+    """Where the per-version seed repositories live for this module; each ``_repo`` call copies one instead of running git four times."""
+    global _TEMPLATE_ROOT
+    _TEMPLATE_ROOT = tmp_path_factory.mktemp("seed_repos")
+    yield
+    _TEMPLATE_ROOT = None
+
+
+def _seed_repo(version: str) -> Path:
+    """A repository with one commit holding a pubspec of *version*, built once per version and module."""
+    assert _TEMPLATE_ROOT is not None, "the module fixture sets the template root"
+    seed = _TEMPLATE_ROOT / f"v-{version}"
+    if not seed.exists():
+        seed.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=seed, check=True, env=git_env())
+        (seed / "pubspec.yaml").write_text(f"name: pkg\nversion: {version}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=seed, check=True, env=git_env())
+        subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=seed, check=True, env=git_env())
+    return seed
+
+
+def _head_sha(repo: Path) -> str:
+    """The commit HEAD points at, read from the loose refs of a fresh repository (no git process)."""
+    head = (repo / ".git" / "HEAD").read_text(encoding="utf-8").strip()
+    return (repo / ".git" / head.split(" ", 1)[1]).read_text(encoding="utf-8").strip()
+
 
 def _repo(tmp_path: Path, version: str, tags: tuple[str, ...] = ()) -> Path:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
-    (tmp_path / "pubspec.yaml").write_text(f"name: pkg\nversion: {version}\n", encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())
-    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True, env=git_env())
-    for t in tags:
-        subprocess.run(["git", "tag", t], cwd=tmp_path, check=True, env=git_env())
+    shutil.copytree(_seed_repo(version), tmp_path, dirs_exist_ok=True)
+    if tags:
+        sha = _head_sha(tmp_path)
+        for t in tags:  # a lightweight tag is a loose ref holding the commit id, which is all ``git tag NAME`` writes
+            ref = tmp_path / ".git" / "refs" / "tags" / t
+            ref.parent.mkdir(parents=True, exist_ok=True)
+            ref.write_text(sha + "\n", encoding="utf-8")
     return tmp_path
 
 
