@@ -197,6 +197,7 @@ def _string_constants(node: ast.AST) -> Iterator[str]:
 class _Detector:
     def __init__(self, tree: ast.Module, *, readers: frozenset[str], treat_sql_as_source: bool, follow_helpers: bool) -> None:
         self.tree = tree
+        self._scope_node_cache: dict[int, tuple[list[ast.stmt], list[ast.AST]]] = {}
         self.readers = readers
         self.aliases = ImportAliases.from_tree(tree)
         self.suffixes = (".py", ".sql") if treat_sql_as_source else (".py",)
@@ -369,12 +370,25 @@ class _Detector:
                     out.add(node.name)
         return out
 
+    def _scope_nodes(self, body: list[ast.stmt]) -> list[ast.AST]:
+        """``list(_walk_scope(body))``, built once per body for the life of this detector.
+
+        The four name analyses of one function (paths, source text, temp paths, file text) and each round of their fixed-point loops walk
+        the same body; the walk is deterministic, so one list serves them all, in the same order. The cache holds the body itself, so its
+        ``id`` cannot be reused for another list while the entry lives.
+        """
+        hit = self._scope_node_cache.get(id(body))
+        if hit is None or hit[0] is not body:
+            hit = (body, list(_walk_scope(body)))
+            self._scope_node_cache[id(body)] = hit
+        return hit[1]
+
     def _tainted(self, body: list[ast.stmt], path_names: set[str], inherited: set[str]) -> set[str]:
         """Names holding source text in this scope, propagated through derivations until nothing changes."""
         tainted = set(inherited)
         for _ in range(6):
             before = len(tainted)
-            for node in _walk_scope(body):
+            for node in self._scope_nodes(body):
                 if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr, ast.AugAssign)) and node.value is not None:
                     value = node.value
                     if isinstance(value, ast.Call) and (_call_name(value) in _STRUCTURAL or self._is_deserialiser(value)):
@@ -417,7 +431,7 @@ class _Detector:
         names = set(inherited)
         for _ in range(3):
             before = len(names)
-            for node in _walk_scope(body):
+            for node in self._scope_nodes(body):
                 if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None and not _contains_read(node.value):
                     value = node.value
                     if any(isinstance(sub, ast.Name) and (sub.id in _TMP_ROOTS or sub.id in names) for sub in _fast_walk(value)) or any(
@@ -433,7 +447,7 @@ class _Detector:
         tainted = set(inherited)
         for _ in range(6):
             before = len(tainted)
-            for node in _walk_scope(body):
+            for node in self._scope_nodes(body):
                 if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr, ast.AugAssign)) and node.value is not None:
                     value = node.value
                     if isinstance(value, ast.Call) and (
