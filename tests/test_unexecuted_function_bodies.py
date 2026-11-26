@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -413,6 +414,11 @@ def test_cli_baseline_refresh_seeds_with_allow_grow_then_passes(tmp_path, capsys
     shutil.which("coverage") is None and subprocess.run([sys.executable, "-m", "coverage", "--version"], capture_output=True).returncode != 0,
     reason="coverage.py is not installed",
 )
+def _serial_flags() -> list:
+    """``-n 0`` where xdist is installed: coverage measures this process only, so tests run in an xdist worker would read as unexecuted."""
+    return ["-n", "0"] if importlib.util.find_spec("xdist") is not None else []
+
+
 def test_a_real_coverage_run_over_a_function_every_test_stubs_is_flagged(tmp_path):
     """The incident end to end: the only test patches the probe out, so coverage.py itself reports its body unexecuted."""
     _tree(
@@ -434,7 +440,7 @@ def test_a_real_coverage_run_over_a_function_every_test_stubs_is_flagged(tmp_pat
     env = {**os.environ, "PYTHONPATH": str(tmp_path), "PYTHONDONTWRITEBYTECODE": "1", "COVERAGE_FILE": str(tmp_path / ".coverage")}
     env.pop("PYTEST_ADDOPTS", None)
     run = subprocess.run(
-        [sys.executable, "-m", "coverage", "run", "--source=minipkg", "-m", "pytest", "-p", "no:cacheprovider", "-p", "no:randomly", "tests"],
+        [sys.executable, "-m", "coverage", "run", "--source=minipkg", "-m", "pytest", "-p", "no:cacheprovider", "-p", "no:randomly", *_serial_flags(), "tests"],
         cwd=tmp_path,
         env=env,
         capture_output=True,
