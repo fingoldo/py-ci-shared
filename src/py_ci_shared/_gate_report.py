@@ -115,7 +115,10 @@ def line_has_marker(source_lines: Sequence[str], line: int, marker: str) -> bool
     """True when the 1-based *line* of the source carries ``# <marker>`` (an explicit, reviewable opt-out)."""
     if not marker or not 0 < line <= len(source_lines):
         return False
-    comment = _comment_of(source_lines[line - 1])
+    text = source_lines[line - 1]
+    if marker not in text:  # the comment is part of the line, so a line without the marker has no marker comment: skips the character scan of nearly every line
+        return False
+    comment = _comment_of(text)
     return comment is not None and marker in comment and line not in _string_interior_lines(chr(10).join(source_lines))
 
 
