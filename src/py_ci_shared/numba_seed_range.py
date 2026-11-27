@@ -244,6 +244,8 @@ class _FileCheck:
 
 
 def _file_findings(parsed: ParsedFile) -> list[Finding]:
+    if not _SINK_NAME.search(parsed.source):
+        return []  # a sink is named like a seed, directly or through the import it was aliased from: a file that never says `seed` has none
     return _FileCheck(parsed).run()
 
 
