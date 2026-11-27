@@ -183,6 +183,8 @@ def _target(call: ast.Call, aliases: ImportAliases) -> Optional[ast.expr]:
 
 
 def _file_findings(parsed: ParsedFile, suffixes: Sequence[str], name_pattern: Optional[str]) -> list[Finding]:
+    if "write_text" not in parsed.source and "open" not in parsed.source:
+        return []  # a flagged call is Path.write_text or one of the open spellings (builtins, io, codecs, Path.open), under any import alias
     tree = parsed.tree
     aliases = ImportAliases.from_tree(tree)
     resolver = _Resolver(tree, suffixes, name_pattern)
