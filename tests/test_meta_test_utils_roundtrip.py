@@ -253,6 +253,18 @@ class TestUnbackedAuditDispositions:
 
         assert unbacked_audit_dispositions(audit, repo) == []
 
+    def test_the_def_lookup_keeps_the_substring_semantics_it_replaced(self, tmp_path):
+        """`def test_x` anywhere in the corpus backs `test_x`: a longer name, a `def def` overlap, and a cite with punctuation all count."""
+        from py_ci_shared.meta_test_utils import unbacked_audit_dispositions
+
+        repo = tmp_path / "repo"
+        self._write(repo, "tests/test_thing.py", "def test_long_name_here():\n    pass\n# def def test_overlap_word\nx = 'def test_a b'\n")
+        audit = repo / "audits"
+        rows = {"F1": "test_long_name", "F2": "test_overlap_word", "F3": "test_a b", "F4": "test_missing_entirely", "F5": "test_long_name_here_and_more"}
+        self._write(audit, "a.md", "".join(f"| {k} | RESOLVED | `{v}` |\n" for k, v in rows.items()))
+
+        assert [line.split()[0] for line in unbacked_audit_dispositions(audit, repo)] == ["audits/a.md:4", "audits/a.md:5"]
+
     def test_a_resolved_row_citing_nothing_is_reported(self, tmp_path):
         from py_ci_shared.meta_test_utils import unbacked_audit_dispositions
 

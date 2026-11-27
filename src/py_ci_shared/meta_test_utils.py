@@ -42,6 +42,7 @@ import inspect
 import re
 import types
 import typing
+from bisect import bisect_left
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from collections.abc import Iterable
@@ -744,10 +745,30 @@ def _names_a_repo_symbol(citation: str, repo_root: Path) -> bool:
     return name in symbols or name.rsplit(".", 1)[-1] in symbols
 
 
-def _citation_is_backed(cite: str, repo_root: Path, test_name_prefix: str, test_corpus: str, by_name: frozenset[str]) -> bool:
+_DEF_WORD_RE = re.compile(r"(?=def (\w+))")  # zero-width, so `def def x` still yields `x`: the substring test it replaces overlaps too
+
+
+class _TestDefs:
+    """``f"def {cite}" in corpus`` without a scan of the whole corpus per citation.
+
+    ``def X`` occurs in the text exactly when some word that follows a ``def `` starts with ``X``, so a citation made of word characters
+    is a prefix lookup in the sorted words; any other citation (punctuation, spaces) keeps the substring test."""
+
+    def __init__(self, corpus: str) -> None:
+        self.corpus = corpus
+        self._words = sorted({m.group(1) for m in _DEF_WORD_RE.finditer(corpus)})
+
+    def defines(self, cite: str) -> bool:
+        if re.fullmatch(r"\w+", cite):
+            at = bisect_left(self._words, cite)
+            return at < len(self._words) and self._words[at].startswith(cite)
+        return f"def {cite}" in self.corpus
+
+
+def _citation_is_backed(cite: str, repo_root: Path, test_name_prefix: str, test_corpus: _TestDefs, by_name: frozenset[str]) -> bool:
     """True when one backtick citation names an artefact that exists (test, path, filename, commit or repo symbol)."""
     cite = cite.strip().split(":")[0].split("::")[0]
-    if cite.startswith(test_name_prefix) and f"def {cite}" in test_corpus:
+    if cite.startswith(test_name_prefix) and test_corpus.defines(cite):
         return True
     if cite and (repo_root / cite).exists():
         return True
@@ -782,9 +803,7 @@ def unbacked_audit_dispositions(audit_dir: Path, repo_root: Path, test_name_pref
     Returns one string per unbacked row.
     """
     unbacked: list[str] = []
-    test_corpus = ""
-    for py in sorted(_rglob_test_files(repo_root)):
-        test_corpus += py.read_text(encoding="utf-8", errors="replace")
+    test_corpus = _TestDefs("".join(py.read_text(encoding="utf-8", errors="replace") for py in sorted(_rglob_test_files(repo_root))))
     by_name = _repo_filenames(repo_root)
 
     for doc in iter_files_pruned(audit_dir, (".md",)):
