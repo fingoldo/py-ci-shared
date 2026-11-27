@@ -41,6 +41,7 @@ SUPPRESSION = "# tmp-path-ok:"
 _USER_MARKERS = ("getuid", "getlogin", "getpass", "USERNAME")
 _UNIQUE_MARKERS = ("mkdtemp", "mkstemp")
 _BUILDER_NAMES = frozenset({"join", "Path", "PurePath"})
+_SOURCE_WORDS = ("tempdir", "/tmp", "mktemp")  # gettempdir and tempfile.tempdir; the literal /tmp and /tmp/...; tempfile.mktemp under any alias
 
 
 def _is_gettempdir(node: ast.AST) -> bool:
@@ -282,6 +283,8 @@ def find_predictable_tmp_path(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
+        if not any(word in parsed.source for word in _SOURCE_WORDS):
+            continue  # a shared-temp source, a /tmp literal and a mktemp call each spell one of these words
         out.extend(_findings_in(parsed.tree, parsed.rel, parsed.source))
     return sorted(out, key=lambda f: (f.path, f.line))
 
