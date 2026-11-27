@@ -29,6 +29,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import weakref
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -130,8 +131,16 @@ def _reads(node: ast.AST) -> "list[ast.Name]":
     return sorted((n for _, n in _names(node) if isinstance(n.ctx, ast.Load)), key=lambda n: (n.lineno, n.col_offset))
 
 
+_STORES: "weakref.WeakKeyDictionary[ast.AST, frozenset[str]]" = weakref.WeakKeyDictionary()
+
+
 def _stores(node: ast.AST) -> "set[str]":
-    return {name for name, n in _names(node) if isinstance(n.ctx, ast.Store)}
+    """The names *node* binds. Asked again for the same node by every enclosing block (`_all_stores` of each loop, `with` and `try` body re-reads
+    the blocks inside it), so the answer is kept per node and a fresh set is returned."""
+    cached = _STORES.get(node)
+    if cached is None:
+        cached = _STORES[node] = frozenset(name for name, n in _names(node) if isinstance(n.ctx, ast.Store))
+    return set(cached)
 
 
 def _split_stores(node: ast.AST) -> "tuple[set[str], set[str]]":
