@@ -153,6 +153,8 @@ class _Scope:
     #: name -> every binding of it in this scope; ``None`` stands for a binding that is not a plain import
     bindings: "dict[str, list[Optional[_Binding]]]" = field(default_factory=dict)
     global_names: set[str] = field(default_factory=set)
+    #: ``_own_nodes(node)`` walked once and shared by the binding pass, the search for nested scopes and the read pass
+    own: "list[tuple[ast.AST, frozenset[str]]]" = field(default_factory=list)
 
     @property
     def is_class(self) -> bool:
@@ -171,9 +173,10 @@ def _record_import(scope: _Scope, node: "Union[ast.Import, ast.ImportFrom]") -> 
 
 def _build_scope(node: ast.AST, parent: "Optional[_Scope]") -> _Scope:
     scope = _Scope(node, parent)
+    scope.own = list(_own_nodes(node))
     for name in _param_names(node):
         scope.bindings.setdefault(name, []).append(None)
-    for sub, _shadow in _own_nodes(node):
+    for sub, _shadow in scope.own:
         if isinstance(sub, (ast.Import, ast.ImportFrom)):
             _record_import(scope, sub)
         elif isinstance(sub, (ast.Global, ast.Nonlocal)):
@@ -192,7 +195,7 @@ def _scopes_of(tree: ast.Module) -> Iterator[_Scope]:
     while todo:
         scope = todo.pop(0)
         yield scope
-        for sub, _shadow in _own_nodes(scope.node):
+        for sub, _shadow in scope.own:
             if isinstance(sub, _SCOPE_TYPES):
                 todo.append(_build_scope(sub, scope))
 
@@ -495,7 +498,7 @@ def _scan_file(tree: ast.Module, rel: str, path: Path, dirs: Sequence[Path], res
     hasattr_tested = _hasattr_by_scope(tree)
     skipped_seen: set[tuple[str, str, str]] = set()
     for scope in scopes:
-        for node, shadow in _own_nodes(scope.node):
+        for node, shadow in scope.own:
             if not (isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) and isinstance(node.value, ast.Name)):
                 continue
             name = node.value.id
