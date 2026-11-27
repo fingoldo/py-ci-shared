@@ -78,6 +78,8 @@ def _scan_findings(scan: ScanResult, allow: Mapping[str, str]) -> tuple[list[Fin
 
 
 def _file_hits(parsed: ParsedFile) -> list[tuple[int, str]]:
+    if "json" not in parsed.source:
+        return []  # an import and an import_module("json") literal both spell the module's name
     lines = parsed.source.splitlines()
     return [(line, text) for line, text in _imports(parsed.tree) if not line_has_marker(lines, line, MARKER)]
 
