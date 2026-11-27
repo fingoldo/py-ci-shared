@@ -225,6 +225,8 @@ def find_unsorted_hash_keys(
     scan = scan_python(root, exclude=DEFAULT_EXCLUDE | frozenset(exclude_parts), use_git=use_git)
     findings: list[Finding] = []
     for f in scan:
+        if "dumps" not in f.source:
+            continue  # a finding starts at a json/orjson/simplejson/ujson/rapidjson dumps call, which spells dumps under any import alias
         aliases = ImportAliases.from_tree(f.tree)
         lines = f.source.splitlines()
         scopes: list[_FunctionNode] = [f.tree, *(n for n in _fast_walk(f.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]
