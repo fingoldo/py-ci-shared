@@ -257,6 +257,25 @@ def _module_receiver_names(tree: ast.Module) -> set[str]:
     return names
 
 
+def _unknown_name_getattrs(tree: ast.AST, known: set[str]) -> list[tuple[ast.Call, str]]:
+    """Every ``getattr(obj, "<literal>", default)`` of a module whose literal is neither a known attribute nor a dunder, with the literal."""
+    found: list[tuple[ast.Call, str]] = []
+    for node in walk_tree(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"):
+            continue
+        # Three arguments exactly: a two-argument getattr raises on a miss and is not silent.
+        if len(node.args) != 3 or node.keywords:
+            continue
+        attribute = node.args[1]
+        if not (isinstance(attribute, ast.Constant) and isinstance(attribute.value, str)):
+            continue  # a computed name is a different pattern and this rule cannot judge it
+        name = attribute.value
+        if name in known or name.startswith("__"):
+            continue
+        found.append((node, name))
+    return found
+
+
 def scan_getattr_unknown_attribute(
     root: Path,
     exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
@@ -305,20 +324,12 @@ def scan_getattr_unknown_attribute(
             continue
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
+        calls = _unknown_name_getattrs(tree, known)
+        if not calls:
+            continue  # the receiver maps below exist only to judge such a call
         resolved = _receivers_defined_in_tree(tree, classes, dynamic) if require_known_receiver else set()
         module_receivers = _module_receiver_names(tree) if require_known_receiver else set()
-        for node in walk_tree(tree):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"):
-                continue
-            # Three arguments exactly: a two-argument getattr raises on a miss and is not silent.
-            if len(node.args) != 3 or node.keywords:
-                continue
-            attribute = node.args[1]
-            if not (isinstance(attribute, ast.Constant) and isinstance(attribute.value, str)):
-                continue  # a computed name is a different pattern and this rule cannot judge it
-            name = attribute.value
-            if name in known or name.startswith("__"):
-                continue
+        for node, name in calls:
             if require_known_receiver:
                 receiver = node.args[0]
                 if id(receiver) not in resolved and not (isinstance(receiver, ast.Name) and receiver.id in module_receivers):
