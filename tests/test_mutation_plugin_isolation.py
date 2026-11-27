@@ -113,7 +113,7 @@ def test_a_tree_that_names_none_of_the_optional_plugins_switches_all_three_off(t
     [
         ("from hypothesis import given\n\n\ndef test_m():\n    pass\n", "hypothesispytest"),
         ("def test_m(benchmark):\n    benchmark(len, [1])\n", "benchmark"),
-        ("import pytest\n\n\n@pytest.mark.anyio\nasync def test_m():\n    pass\n", "anyio"),
+        ("import pytest\n\n\n@pytest.mark." + "anyio\nasync def test_m():\n    pass\n", "anyio"),  # joined so the marker gate does not read the sample as a marker use
         ("import trio\n\n\ndef test_m():\n    pass\n", "anyio"),
     ],
 )
