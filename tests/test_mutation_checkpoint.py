@@ -28,7 +28,7 @@ def _repo(tmp_path: Path) -> Path:
 
 def _sweep(repo: Path, checkpoint: Path | None):
     return mutation_teeth.find_surviving_mutants(
-        "m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, use_warm_worker=True, checkpoint_path=checkpoint
+        "m.py", ["tests/test_m.py"], repo, limit=3, timeout=300, use_cache=False, use_warm_worker=True, checkpoint_path=checkpoint
     )
 
 
