@@ -126,3 +126,14 @@ def test_assert_and_baseline(tmp_path):
 def test_index_endings_counts(tmp_path):
     repo = _repo(tmp_path, {"a.txt": b"1\r\n2\n3\r4"})
     assert cle.index_endings(repo) == [cle.Endings("a.txt", crlf=1, lf=1, bare_cr=1)]
+
+
+def test_skip_clean_leaves_an_lf_blob_unread_and_every_offender_counted(tmp_path):
+    files = {"lf.py": b"a = 1\nb = 2\n", "none.txt": b"no line end", "crlf.py": b"a\r\nb\r\n", "mixed.txt": b"a\r\nb\n", "cr.txt": b"a\rb\r"}
+    repo = _repo(tmp_path, files)
+    full = {e.path: e for e in cle.index_endings(repo)}
+    fast = {e.path: e for e in cle.index_endings(repo, skip_clean=True)}
+    assert fast.keys() == full.keys()
+    assert [fast[p] for p in ("crlf.py", "mixed.txt", "cr.txt")] == [full[p] for p in ("crlf.py", "mixed.txt", "cr.txt")]
+    assert fast["lf.py"] == cle.Endings("lf.py", 0, 0, 0) and full["lf.py"].lf == 2
+    assert _rules(repo) == [("cr.txt", cle.RULE_BARE_CR), ("crlf.py", cle.RULE_CRLF), ("mixed.txt", cle.RULE_MIXED)]

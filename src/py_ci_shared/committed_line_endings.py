@@ -45,6 +45,7 @@ RULE_CRLF = "committed-crlf"
 
 PathLike = Union[str, Path]
 _SKIPPED_MODES = frozenset({"160000", "120000"})  # a submodule commit, a symlink
+_CLEAN_VERDICTS = frozenset({"lf", "none"})  # git saw only LF, or no line end at all
 
 
 @dataclass(frozen=True)
@@ -75,9 +76,9 @@ def _records(raw: bytes) -> Iterator[tuple[str, str]]:
             yield head.decode("utf-8", "replace"), path.decode("utf-8", "surrogateescape")
 
 
-def _text_files(root: Path) -> dict[str, bool]:
-    """Index path -> whether git calls it binary, for every file not marked ``-text``/``binary``."""
-    out: dict[str, bool] = {}
+def _text_files(root: Path) -> dict[str, str]:
+    """Index path -> git's verdict on the blob (``lf``, ``crlf``, ``mixed``, ``none``, ``-text``), for every file not marked ``-text``/``binary``."""
+    out: dict[str, str] = {}
     for head, path in _records(_git(root, "ls-files", "-z", "--eol")):
         fields = head.split()
         index = next((f[2:] for f in fields if f.startswith("i/")), "")
@@ -85,7 +86,7 @@ def _text_files(root: Path) -> dict[str, bool]:
         attrs = attr.split()
         if "-text" in attrs or "binary" in attrs:
             continue
-        out[path] = index == "-text"
+        out[path] = index
     return out
 
 
@@ -129,18 +130,26 @@ def _decodes_as_text(data: bytes) -> bool:
     return True
 
 
-def index_endings(root: PathLike) -> list[Endings]:
-    """Line-end counts of every text file in the index of the git repo at *root*, sorted by path."""
+def index_endings(root: PathLike, *, skip_clean: bool = False) -> list[Endings]:
+    """Line-end counts of every text file in the index of the git repo at *root*, sorted by path.
+
+    With *skip_clean* a blob git itself reports as ``lf`` or ``none`` is not read and gets zero counts: git calls any blob with
+    a lone CR binary, so such a blob has no bare CR, no CRLF and nothing a finding is made of. Most of a tree is such files, and
+    reading them is the whole cost of the scan."""
     base = Path(root)
     if not base.is_dir():
         raise CorpusError(f"corpus root does not exist: {base}")
-    binary = _text_files(base)  # path -> git calls it binary
-    ids = {path: sha for path, sha in _blobs(base).items() if path in binary}
-    blobs = _cat_blobs(base, sorted(set(ids.values())))
+    verdict = _text_files(base)  # path -> git's eol verdict on the index blob
+    ids = {path: sha for path, sha in _blobs(base).items() if path in verdict}
+    unread = {path for path in ids if skip_clean and verdict[path] in _CLEAN_VERDICTS}
+    blobs = _cat_blobs(base, sorted({sha for path, sha in ids.items() if path not in unread}))
     out = []
     for path in sorted(ids):
+        if path in unread:
+            out.append(Endings(path, 0, 0, 0))
+            continue
         data = blobs.get(ids[path], b"")
-        if binary[path] and not _decodes_as_text(data):
+        if verdict[path] == "-text" and not _decodes_as_text(data):
             continue
         crlf = data.count(b"\r\n")
         out.append(Endings(path, crlf, data.count(b"\n") - crlf, data.count(b"\r") - crlf))
@@ -166,7 +175,7 @@ def find_committed_line_endings(root: PathLike, *, min_files: int = 1) -> list[F
 
     Raises ``CorpusError`` outside a git repository and ``EmptyScanError`` when fewer than *min_files* text files are
     in the index: a gate that reads nothing must not pass."""
-    endings = index_endings(root)
+    endings = index_endings(root, skip_clean=True)
     if len(endings) < min_files:
         raise EmptyScanError(f"only {len(endings)} committed text file(s) under {display_root(root)}; expected at least {min_files}")
     return [f for f in (_finding(e) for e in endings) if f is not None]
