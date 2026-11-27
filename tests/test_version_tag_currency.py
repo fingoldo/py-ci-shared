@@ -42,6 +42,10 @@ def _seed_repo(version: str) -> Path:
     if not seed.exists():
         seed.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=seed, check=True, env=git_env())
+        # A commit starts `git maintenance run --auto` in the background on some platforms (macOS in CI); it holds .git/objects/maintenance.lock while a
+        # copy of the repository is being made, and the copy then fails with shutil.Error. Nothing here needs maintenance.
+        for key, value in (("maintenance.auto", "false"), ("gc.auto", "0")):
+            subprocess.run(["git", "config", key, value], cwd=seed, check=True, env=git_env())
         (seed / "pubspec.yaml").write_text(f"name: pkg\nversion: {version}\n", encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=seed, check=True, env=git_env())
         subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=seed, check=True, env=git_env())
@@ -55,7 +59,7 @@ def _head_sha(repo: Path) -> str:
 
 
 def _repo(tmp_path: Path, version: str, tags: tuple[str, ...] = ()) -> Path:
-    shutil.copytree(_seed_repo(version), tmp_path, dirs_exist_ok=True)
+    shutil.copytree(_seed_repo(version), tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns("*.lock"))
     if tags:
         sha = _head_sha(tmp_path)
         for t in tags:  # a lightweight tag is a loose ref holding the commit id, which is all ``git tag NAME`` writes
