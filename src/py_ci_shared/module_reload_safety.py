@@ -29,6 +29,7 @@ from __future__ import annotations
 from ._core.outcome import entries_word
 
 import ast
+import re
 from ._core.unparse import unparse_stable
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -63,6 +64,9 @@ class ReloadSite:
 
     def __str__(self) -> str:
         return f"{self.path}:{self.line} ({self.primitive})" + ("  [reloads a singleton-owning module: needs a subprocess]" if self.singleton else "")
+
+
+_SOURCE_HINTS = re.compile(r"reload|modules")
 
 
 def _is_sys_modules(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
@@ -373,7 +377,7 @@ def find_unpaired_reloads(
     scan = scan_python(tests_dir, min_files=min_files, exclude=DEFAULT_EXCLUDE)
     if min_files:
         scan.check_floor()
-    parsed_by_path = {f.path: (f.tree, ImportAliases.from_tree(f.tree, scoped=True)) for f in scan}
+    parsed_by_path = {f.path: (f.tree, ImportAliases.from_tree(f.tree, scoped=True)) for f in scan if f.path.name == "conftest.py"}
     conftests = _conftest_fixtures(parsed_by_path)
     root = tests_dir.resolve()
     out: list[ReloadSite] = [_unparsed_site(p) for p in (() if allow_unparsed else scan.unparsed) if p.rel not in exempt]
@@ -381,7 +385,9 @@ def find_unpaired_reloads(
         rel = parsed.rel
         if rel in exempt:
             continue
-        tree, aliases = parsed_by_path[parsed.path]
+        if not _SOURCE_HINTS.search(parsed.source):
+            continue  # every primitive spells `reload` or `modules`, whatever the alias
+        tree, aliases = parsed_by_path.get(parsed.path) or (parsed.tree, ImportAliases.from_tree(parsed.tree, scoped=True))
         sites = [(node, prim) for node in _fast_walk(tree) for prim in [reload_primitive(node, aliases)] if prim is not None]
         if not sites:
             continue
