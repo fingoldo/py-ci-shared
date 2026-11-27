@@ -64,6 +64,7 @@ _RESTORER_NAME = re.compile(r"(restor|reset|clean_?up|tear_?down|finali[sz]|reve
 _SCOPING_CALLS = ("patch.dict", "monkeypatch.context")
 _FINALIZER_ATTRS = frozenset({"addfinalizer", "addCleanup", "enterContext", "callback"})
 _MAX_TEXT = 120
+_WRITE_WORDS = ("environ", "putenv", "unsetenv")
 
 
 def _own_nodes(fn: ast.AST) -> Iterator[ast.AST]:
@@ -210,6 +211,8 @@ def find_env_write_restore(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
+        if not any(word in parsed.source for word in _WRITE_WORDS):
+            continue  # a write names environ, putenv or unsetenv, under any import alias
         out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines()))
     return sorted(out, key=lambda f: (f.path, f.line))
 
