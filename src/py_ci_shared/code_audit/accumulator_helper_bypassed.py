@@ -90,8 +90,14 @@ def _module_assigned_names(tree: ast.Module) -> frozenset[str]:
 
 def _called_names(tree: ast.Module) -> set[str]:
     """Every name called anywhere in this module. A function nobody calls is not the way in."""
-    called = {node.func.id for node in walk_tree(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
-    called |= {node.func.attr for node in walk_tree(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
+    called: set[str] = set()
+    for node in walk_tree(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name):
+                called.add(func.id)
+            elif isinstance(func, ast.Attribute):
+                called.add(func.attr)
     return called
 
 
@@ -190,12 +196,20 @@ def _owners_of_accumulators(parsed: list[tuple[str, ast.Module, list[str]]], cal
     `_inc_stats`), and treating a second parameter-keyed writer as ambiguous discarded both.
     """
     owners: dict[str, list[tuple[str, str]]] = {}
-    for rel, tree, _lines in parsed:
+    for rel, tree, lines in parsed:
+        # An owner writes a structure whose name carries an accumulator hint, and that name is written out in the function's own source: a module or a
+        # function whose text holds no hint cannot be one, so it is not walked.
+        module_text = "\n".join(lines).lower()
+        if not any(hint in module_text for hint in _ACCUMULATOR_HINTS):
+            continue
         module_level = _module_assigned_names(tree)
         for func in walk_tree(tree):
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             if _is_setup(func.name) or func.name not in called:
+                continue
+            body_text = "\n".join(lines[func.lineno - 1 : getattr(func, "end_lineno", None) or len(lines)]).lower()
+            if not any(hint in body_text for hint in _ACCUMULATOR_HINTS):
                 continue
             written = _mutated_structures(func, module_level)
             if len(written) != 1:
