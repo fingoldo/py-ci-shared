@@ -102,6 +102,7 @@ _DANGEROUS_NAMES = frozenset(
         "partial", "partialmethod", "reduce", "import_module", "reload", "modules", "exit", "attrgetter", "methodcaller", "call_method",
     }
 )  # fmt: skip
+_SINK_WORDS = ("load", "pickle", "shelve", "yaml", "YAML")
 _SAFE_YAML = frozenset({"SafeLoader", "CSafeLoader", "BaseLoader", "CBaseLoader"})
 # A dump/dumps/save earlier in the same function means the bytes were produced here (a round-trip), not received.
 _PRODUCERS = frozenset({"dump", "dumps", "save", "to_pickle"})
@@ -599,8 +600,8 @@ def find_unsafe_deserialization(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
-        if any(fragment in parsed.rel for fragment in skipped):
-            continue
+        if any(fragment in parsed.rel for fragment in skipped) or not any(word in parsed.source for word in _SINK_WORDS):
+            continue  # every sink spells load, pickle, shelve or yaml/YAML (marshal and joblib loads, read_pickle, jsonpickle, ruamel YAML included)
         out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree, scoped=True), parsed.source.splitlines()))
     return sorted(out, key=lambda f: (f.path, f.line))
 
