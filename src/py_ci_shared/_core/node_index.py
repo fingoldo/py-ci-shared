@@ -147,14 +147,17 @@ def _index(tree: ast.AST) -> "dict[type, tuple[Sequence[int], list[ast.AST]]]":
         hit = _INDEX.get(tree)
     if hit is not None:
         return hit
-    by_type: "dict[type, tuple[Sequence[int], list[ast.AST]]]" = {}
+    positions: "dict[type, array[int]]" = {}
+    members: "dict[type, list[ast.AST]]" = {}
     nodes = _descendants(tree)
     for pos, node in enumerate(nodes, start=1):  # position 0 is the root: see nodes_of
-        entry = by_type.get(type(node))
-        if entry is None:
-            entry = by_type[type(node)] = (array("I"), [])
-        entry[0].append(pos)
-        entry[1].append(node)
+        kind = type(node)
+        if kind not in positions:
+            positions[kind] = array("I")
+            members[kind] = []
+        positions[kind].append(pos)
+        members[kind].append(node)
+    by_type: "dict[type, tuple[Sequence[int], list[ast.AST]]]" = {kind: (positions[kind], members[kind]) for kind in positions}
     with _LOCK:
         _INDEX[tree] = by_type
     return by_type

@@ -607,7 +607,7 @@ def _size_or_zero(path: Path) -> int:
     """Size of *path* in bytes; 0 for a file that vanished or cannot be read, which the scanners skip as well."""
     try:
         return path.stat().st_size
-    except OSError:
+    except OSError:  # best-effort: a size estimate for the worker count; a file that vanished contributes nothing, and the scanners skip it too
         return 0
 
 
