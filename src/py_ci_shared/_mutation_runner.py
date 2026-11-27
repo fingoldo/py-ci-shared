@@ -259,6 +259,54 @@ def _tree_mentions_dash(root: str) -> bool:
     return False
 
 
+#: Optional plugins whose import is a measurable part of a nested run's start (three of them took 3.5 s down to 2.4 s on a one-test repo), and what
+#: names each: a test or an option reaches what a plugin provides only through its own word. Keyed by the entry name of ``pytest -p no:<name>``.
+_QUIET_PLUGIN_WORDS = {
+    "hypothesispytest": re.compile(r"hypothesis", re.IGNORECASE),
+    "benchmark": re.compile(r"benchmark", re.IGNORECASE),
+    "anyio": re.compile(r"anyio|trio", re.IGNORECASE),
+}
+_PYTEST_CONFIG_FILES = ("pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg")
+
+
+@functools.lru_cache(maxsize=1)
+def _installed_plugin_names() -> "frozenset[str]":
+    """The entry names of the pytest plugins registered in this interpreter."""
+    from importlib.metadata import entry_points
+
+    found = entry_points()
+    pytest11 = found.select(group="pytest11") if hasattr(found, "select") else found.get("pytest11", ())
+    return frozenset(entry.name for entry in pytest11)
+
+
+def _config_files_above(root: Path) -> "list[Path]":
+    """The pytest configuration files of the nearest directory at or above *root* that has one (where ``addopts`` can name a plugin's options)."""
+    for candidate in (root, *root.parents):
+        files = [candidate / name for name in _PYTEST_CONFIG_FILES if (candidate / name).is_file()]
+        if files:
+            return files
+    return []
+
+
+@functools.lru_cache(maxsize=32)
+def _plugins_named_in(root: str) -> "frozenset[str]":
+    """Which of the optional plugins any Python file of the tree or its pytest configuration names; all of them when a file cannot be read.
+
+    Disabling a plugin changes a verdict only if some test or option can reach what it provides; unreadable means unknown, so the plugins stay on."""
+    named: set = set()
+    paths = [*iter_files_pruned(Path(root), (".py",)), *_config_files_above(Path(root))]
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            logger.warning("could not read %s to look for optional plugins, keeping them enabled: %s", path, type(exc).__name__)
+            return frozenset(_QUIET_PLUGIN_WORDS)
+        named.update(name for name, word in _QUIET_PLUGIN_WORDS.items() if word.search(text))
+        if len(named) == len(_QUIET_PLUGIN_WORDS):
+            break
+    return frozenset(named)
+
+
 def _declares_gates(pyproject: Path) -> bool:
     """Whether *pyproject* has a ``[tool.py_ci_shared]`` table; an unreadable file is logged and counts as declaring them.
 
@@ -285,7 +333,8 @@ def _gates_configured(root: Path) -> bool:
 
 
 def _plugin_isolation_flags(root: Path) -> list[str]:
-    """Plugin switches for a nested run: ``-p no:dash`` when the tree never names dash, and ``-p no:py_ci_shared`` when the tree has no gates.
+    """Plugin switches for a nested run: ``-p no:dash`` when the tree never names dash, ``-p no:py_ci_shared`` when the tree has no gates, and one
+    ``-p no:<plugin>`` for each of hypothesis, benchmark and anyio that is installed and that neither the tree nor its pytest configuration names.
 
     The py_ci_shared plugin's only effect on a run is to add the gate items declared in ``[tool.py_ci_shared]`` and to watch for hangs. A
     sandbox without that table has no gate items, so the plugin adds nothing to a mutant's verdict but about half of each nested run's
@@ -297,6 +346,10 @@ def _plugin_isolation_flags(root: Path) -> list[str]:
         flags += ["-p", "no:dash"]
     if not _gates_configured(root):
         flags += ["-p", "no:py_ci_shared"]
+    named = _plugins_named_in(str(root))
+    for name in sorted(_QUIET_PLUGIN_WORDS):
+        if name in _installed_plugin_names() and name not in named:
+            flags += ["-p", f"no:{name}"]
     return flags
 
 

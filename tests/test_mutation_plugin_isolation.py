@@ -83,3 +83,78 @@ def test_an_unreadable_pyproject_keeps_the_plugin_and_says_so(tmp_path, dash_abs
         flags = runner._plugin_isolation_flags(root)
     assert _PLUGIN_SWITCH not in flags
     assert any("unreadable" in record.getMessage() for record in caplog.records)
+
+
+_QUIET = ("hypothesispytest", "benchmark", "anyio")
+
+
+@pytest.fixture
+def quiet_plugins_installed(monkeypatch):
+    """All three optional plugins are present, so the flags depend only on what the tree names."""
+    monkeypatch.setattr(runner, "_installed_plugin_names", lambda: frozenset(_QUIET))
+
+
+def _flags(root: Path) -> "list[str]":
+    """The isolation flags for *root* with the per-tree caches cleared."""
+    runner._tree_mentions_dash.cache_clear()
+    runner._plugins_named_in.cache_clear()
+    return runner._plugin_isolation_flags(root)
+
+
+def test_a_tree_that_names_none_of_the_optional_plugins_switches_all_three_off(tmp_path, dash_absent, quiet_plugins_installed):
+    """With nothing naming hypothesis, benchmark or anyio, a nested run starts without them."""
+    root = _tree(tmp_path, {"tests/test_m.py": "def test_m():\n    assert 1 == 1\n"})
+    flags = _flags(root)
+    assert all(f"no:{name}" in flags for name in _QUIET)
+
+
+@pytest.mark.parametrize(
+    ("source", "kept"),
+    [
+        ("from hypothesis import given\n\n\ndef test_m():\n    pass\n", "hypothesispytest"),
+        ("def test_m(benchmark):\n    benchmark(len, [1])\n", "benchmark"),
+        ("import pytest\n\n\n@pytest.mark.anyio\nasync def test_m():\n    pass\n", "anyio"),
+        ("import trio\n\n\ndef test_m():\n    pass\n", "anyio"),
+    ],
+)
+def test_a_plugin_the_tree_names_stays_on_and_the_others_go(tmp_path, dash_absent, quiet_plugins_installed, source, kept):
+    """A test that names a plugin keeps it; the two it does not name are still switched off."""
+    root = _tree(tmp_path, {"tests/test_m.py": source})
+    flags = _flags(root)
+    assert f"no:{kept}" not in flags
+    assert all(f"no:{name}" in flags for name in _QUIET if name != kept)
+
+
+def test_an_option_of_a_plugin_in_the_pytest_configuration_keeps_it(tmp_path, dash_absent, quiet_plugins_installed):
+    """``addopts`` naming ``--benchmark-disable`` is rejected as an unknown option once the plugin is off, so the plugin stays on."""
+    root = _tree(tmp_path, {"pyproject.toml": '[tool.pytest.ini_options]\naddopts = "--benchmark-disable"\n', "tests/test_m.py": "def test_m():\n    pass\n"})
+    flags = _flags(root)
+    assert "no:benchmark" not in flags
+    assert "no:hypothesispytest" in flags and "no:anyio" in flags
+
+
+def test_a_plugin_that_is_not_installed_gets_no_switch(tmp_path, dash_absent, monkeypatch):
+    """Only plugins registered in the interpreter get a switch."""
+    monkeypatch.setattr(runner, "_installed_plugin_names", lambda: frozenset({"benchmark"}))
+    root = _tree(tmp_path, {"tests/test_m.py": "def test_m():\n    pass\n"})
+    flags = _flags(root)
+    assert "no:benchmark" in flags
+    assert "no:hypothesispytest" not in flags and "no:anyio" not in flags
+
+
+def test_an_unreadable_test_file_keeps_every_optional_plugin_and_says_so(tmp_path, dash_absent, quiet_plugins_installed, monkeypatch, caplog):
+    """A file that cannot be read is unknown, so none of the three is switched off, and the substitution is logged at WARNING."""
+    root = _tree(tmp_path, {"tests/test_m.py": "def test_m():\n    pass\n"})
+    real = Path.read_text
+
+    def failing(self, *args, **kwargs):
+        """Fail for the test file, as a permission error would."""
+        if self.name == "test_m.py":
+            raise PermissionError("no")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", failing)
+    with caplog.at_level("WARNING"):
+        flags = _flags(root)
+    assert not any(f"no:{name}" in flags for name in _QUIET)
+    assert any("optional plugins" in record.getMessage() for record in caplog.records)
