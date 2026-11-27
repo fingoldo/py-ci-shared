@@ -189,10 +189,12 @@ def scan_vacuous_loop_assertion(
     # within the test file, those read as collections that might be empty, and they were the bulk
     # of this rule's remaining 176 hits across four codebases.
     everywhere: set[str] = set()
+    own_names: dict[Path, set[str]] = {}
     for py in _iter_py_files(root, exclude_dirs):
         tree = _safe_parse(py)
         if tree is not None:
-            everywhere |= _nonempty_literal_names([tree])
+            own_names[py] = _nonempty_literal_names([tree])
+            everywhere |= own_names[py]
 
     for py in _iter_py_files(root, exclude_dirs):
         # No filename filter: `_is_test` already requires a `test_`-prefixed function, and adding a
@@ -200,15 +202,16 @@ def scan_vacuous_loop_assertion(
         tree = _safe_parse(py)
         if tree is None:
             continue
+        # Inlined rather than a helper returning bool: mypy needs the isinstance here to
+        # narrow `func`, and a TypeGuard import only for that was dead weight vulture
+        # was right to flag.
+        test_funcs = [func for func in walk_tree(tree) if isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)) and func.name.startswith("test_")]
+        if not test_funcs:
+            continue  # only a test function can carry a finding
         src_lines = py.read_text(encoding="utf-8", errors="replace").splitlines()
         rel = py.relative_to(root).as_posix()
 
-        module_constants = everywhere | _nonempty_literal_names([tree])
-        for func in walk_tree(tree):
-            # Inlined rather than a helper returning bool: mypy needs the isinstance here to
-            # narrow `func`, and a TypeGuard import only for that was dead weight vulture
-            # was right to flag.
-            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)) or not func.name.startswith("test_"):
-                continue
+        module_constants = everywhere | own_names[py]
+        for func in test_funcs:
             findings.extend(_vacuous_loop_findings(func, module_constants, rel, src_lines))
     return findings
