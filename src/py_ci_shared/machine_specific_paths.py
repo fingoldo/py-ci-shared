@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ast
 import re
+from bisect import bisect_right
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -167,10 +168,27 @@ def _strip_config_comment(line: str) -> str:
     return line if cut == -1 else line[:cut]
 
 
+def _candidate_line_numbers(text: str, lines_with_ends: "list[str]") -> "list[int]":
+    """1-based numbers of the lines of *text* (as ``splitlines`` cuts it) that hold a :data:`_CANDIDATE` match, in order.
+
+    A rule needs a candidate on its own line, so every other line has no hit; finding the few lines from match positions costs one scan
+    of the text instead of a marker check, a comment strip and a search on each line."""
+    starts: list[int] = []
+    at = 0
+    for line in lines_with_ends:
+        starts.append(at)
+        at += len(line)
+    return sorted({bisect_right(starts, m.start()) for m in _CANDIDATE.finditer(text)})
+
+
 def _config_findings(tf: TextFile, allow: Sequence[re.Pattern[str]]) -> list[Finding]:
     out: list[Finding] = []
+    candidates = _candidate_line_numbers(tf.text, tf.text.splitlines(keepends=True))
+    if not candidates:
+        return out
     lines = tf.text.splitlines()
-    for number, raw in enumerate(lines, 1):
+    for number in candidates:
+        raw = lines[number - 1]
         if line_has_marker(lines, number, MARKER):
             continue
         for _, rule, shown in _hits(_strip_config_comment(raw), allow, workflow=tf.rel.startswith(_WORKFLOW_DIR)):
