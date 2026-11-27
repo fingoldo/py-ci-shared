@@ -481,6 +481,47 @@ else:
     runpy.run_module(TARGET, run_name="__main__", alter_sys=True)
 """
 
+#: The same blocker for a batch of import entries in ONE interpreter: the first import pays for the package's heavy dependencies, the others reuse
+#: what already imported (a module that failed is not left in ``sys.modules``, so a failing entry still fails). Prints one JSON list after the marker:
+#: ``null`` for an entry that imported (or ended in ``SystemExit(0)``), the traceback tail for one that did not.
+_BLOCKER_BATCH = """
+import importlib, importlib.abc, importlib.util, json, sys, traceback
+
+BLOCKED = set(sys.argv[1].split(","))
+ENTRIES = json.loads(sys.argv[2])
+
+
+class Blocker(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in BLOCKED:
+            raise ModuleNotFoundError("blocked by the test: " + fullname, name=fullname)
+        return None
+
+
+sys.meta_path.insert(0, Blocker())
+_real_find_spec = importlib.util.find_spec
+
+
+def _probe_find_spec(name, package=None):
+    if name.split(".")[0] in BLOCKED:
+        return None
+    return _real_find_spec(name, package)
+
+
+importlib.util.find_spec = _probe_find_spec
+results = []
+for target in ENTRIES:
+    try:
+        importlib.import_module(target)
+        results.append(None)
+    except SystemExit as exc:
+        results.append(None if exc.code in (None, 0) else "SystemExit(" + repr(exc.code) + ")")
+    except BaseException:
+        results.append(traceback.format_exc()[-1500:])
+sys.stdout.write("\\n<<BATCH-RESULTS>>" + json.dumps(results))
+"""
+BATCH_MARKER = "<<BATCH-RESULTS>>"
+
 
 def blocked_import_names(root: Union[str, Path], blocked_extras: Iterable[str], name_map: Optional[Mapping[str, Any]] = None) -> list[str]:
     """Import names of every distribution the *blocked_extras* add beyond ``[project.dependencies]``.
@@ -507,6 +548,29 @@ def blocked_import_names(root: Union[str, Path], blocked_extras: Iterable[str], 
     return sorted(names)
 
 
+def _batch_failures(entries: Sequence[Union[str, Sequence[str]]], names: Sequence[str], base: Path, env: Mapping[str, str], timeout: float) -> list[str]:
+    """Import every entry (module names only) in one interpreter with *names* blocked; one message per entry that did not import, in order."""
+    import json
+
+    modules = [entry for entry in entries if isinstance(entry, str)]
+    if len(modules) != len(entries):
+        raise AssertionError("single_process imports module names only; an entry that runs a module with arguments needs its own interpreter")
+    proc = subprocess.run(
+        [sys.executable, "-c", _BLOCKER_BATCH, ",".join(names), json.dumps(modules)],
+        cwd=base,
+        env=dict(env),
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )
+    if proc.returncode != 0 or BATCH_MARKER not in proc.stdout:
+        return [f"import {' '.join(modules)} exited {proc.returncode}:\n{proc.stderr[-1500:]}"]
+    results = json.loads(proc.stdout.split(BATCH_MARKER, 1)[1])
+    return [f"import {module} exited 1:\n{tail}" for module, tail in zip(modules, results) if tail is not None]
+
+
 def assert_entry_imports_without_extras(
     root: Union[str, Path],
     entries: Sequence[Union[str, Sequence[str]]],
@@ -516,8 +580,14 @@ def assert_entry_imports_without_extras(
     timeout: float = 600.0,
     python_path: Optional[Sequence[Union[str, Path]]] = None,
     workers: Optional[int] = None,
+    single_process: bool = False,
 ) -> None:
     """Start each entry in a subprocess where the import names of every distribution of *blocked_extras* are unimportable.
+
+    With *single_process* every entry (all must be module names) is imported one after the other in ONE interpreter instead of one interpreter each:
+    the first import pays for the package's heavy dependencies and the rest reuse them, so a long list of entries costs about one start-up. A failing
+    entry still fails (a module that raised is not left in ``sys.modules``) and is reported in the order of *entries*; what changes is that an
+    entry can import because an earlier entry already imported its dependencies, which is equally valid under the same blocked names.
 
     An entry is a module name (``"mypkg"``: imported) or an argument list (``["mypkg.nightly", "--dry-run"]``: run like
     ``python -m mypkg.nightly --dry-run``). Raises ``AssertionError`` with the tail of the traceback for each entry that
@@ -545,9 +615,12 @@ def assert_entry_imports_without_extras(
             return f"{kind} {target} {' '.join(args)}".strip() + f" exited {proc.returncode}:\n{proc.stderr[-1500:]}"
         return None
 
-    parallel = max(1, min(workers if workers is not None else 4, len(entries), os.cpu_count() or 1))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
-        failures = [result for result in pool.map(probe, entries) if result is not None]
+    if single_process:
+        failures = _batch_failures(entries, names, base, env, timeout)
+    else:
+        parallel = max(1, min(workers if workers is not None else 4, len(entries), os.cpu_count() or 1))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
+            failures = [result for result in pool.map(probe, entries) if result is not None]
     if failures:
         raise AssertionError(
             f"with {sorted(set(blocked_extras))} unimportable ({len(names)} names blocked), {len(failures)} entry(ies) fail to start:\n  "

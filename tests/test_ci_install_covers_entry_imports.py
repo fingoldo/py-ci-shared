@@ -400,3 +400,40 @@ def test_every_failing_entry_is_listed_not_just_the_first(tmp_path):
     with pytest.raises(AssertionError, match=r"2 entry\(ies\) fail") as info:
         assert_entry_imports_without_extras(root, ["mypkg.features", ["mypkg.cli", "--dry-run"]], ["signal"], name_map={"fakewavelets": "fake-wavelets"})
     assert "import mypkg.features" in str(info.value) and "run mypkg.cli --dry-run" in str(info.value)
+
+
+def _single_process_repo(tmp_path):
+    files = {
+        "fakewavelets.py": "VALUE = 1\n",
+        "mypkg/__init__.py": "",
+        "mypkg/ok.py": "VALUE = 1\n",
+        "mypkg/bad_one.py": "import fakewavelets\n",
+        "mypkg/bad_two.py": "import fakewavelets\n",
+        "mypkg/exits.py": "raise SystemExit(0)\n",
+    }
+    return _repo(tmp_path, [], files=files, pyproject=PYPROJECT.replace('"pywavelets"', '"fake-wavelets"'))
+
+
+def test_single_process_reports_the_same_failures_in_the_same_order_as_one_interpreter_per_entry(tmp_path):
+    root = _single_process_repo(tmp_path)
+    mapping = {"fakewavelets": "fake-wavelets"}
+    entries = ["mypkg.bad_two", "mypkg.ok", "mypkg.bad_one", "mypkg.exits"]
+    messages = []
+    for single in (False, True):
+        with pytest.raises(AssertionError) as raised:
+            assert_entry_imports_without_extras(root, entries, ["signal"], name_map=mapping, single_process=single)
+        messages.append(str(raised.value))
+    for message in messages:
+        assert message.index("import mypkg.bad_two") < message.index("import mypkg.bad_one")
+        assert "2 entry(ies) fail to start" in message
+        assert "blocked by the test: fakewavelets" in message
+        assert "mypkg.ok" not in message.split("fail to start:")[1]
+        assert "mypkg.exits" not in message.split("fail to start:")[1]
+
+
+def test_single_process_passes_when_nothing_is_blocked_and_refuses_a_run_entry(tmp_path):
+    root = _single_process_repo(tmp_path)
+    mapping = {"fakewavelets": "fake-wavelets"}
+    assert_entry_imports_without_extras(root, ["mypkg.ok", "mypkg.bad_one", "mypkg.exits"], ["db"], name_map=mapping, single_process=True)
+    with pytest.raises(AssertionError, match="module names only"):
+        assert_entry_imports_without_extras(root, ["mypkg.ok", ["mypkg.ok", "--x"]], ["signal"], name_map=mapping, single_process=True)
