@@ -92,3 +92,16 @@ def test_the_nested_run_never_reseeds_and_drops_the_plugin_only_without_gates(tm
     (tmp_path / "pyproject.toml").write_text('[tool.py_ci_shared]\ncheck = "on"\n', encoding="utf-8")
     gated = stale_baseline_sweep._nested_plugin_flags(tmp_path)
     assert "no:randomly" in gated and "no:py_ci_shared" not in gated
+
+
+def test_a_consumer_tree_that_names_benchmark_keeps_that_plugin_in_the_nested_run(tmp_path, monkeypatch):
+    """The sweep shares the harness's isolation: an installed plugin the consumer's tests name stays on, the others installed go."""
+    from py_ci_shared import _mutation_runner as runner
+
+    monkeypatch.setattr(runner, "_installed_plugin_names", lambda: frozenset({"benchmark", "hypothesispytest"}))
+    runner._tree_mentions_dash.cache_clear()
+    runner._plugins_named_in.cache_clear()
+    (tmp_path / "test_bench.py").write_text("def test_it(benchmark):\n    benchmark(len, [1])\n", encoding="utf-8")
+    flags = stale_baseline_sweep._nested_plugin_flags(tmp_path)
+    assert "no:benchmark" not in flags
+    assert "no:hypothesispytest" in flags

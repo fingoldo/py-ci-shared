@@ -174,19 +174,17 @@ def _pytest_env(tree: Path, out_path: Path) -> dict[str, str]:
 
 
 def _nested_plugin_flags(tree: Path) -> list[str]:
-    """Plugin switches for the nested run: no random reseeding, and no py_ci_shared plugin when the consumer declares no gates.
+    """Plugin switches for the nested run: no random reseeding, then the isolation switches of the mutation harness for the consumer's tree.
 
     ``pytest-randomly`` loads every reseeder entry point before the first test, which imports thinc and torch: about 13 s on a
     machine with them, and enough memory on a loaded one to end the run with a MemoryError (no test ran, and the consumer looked
     clean for the wrong reason). The sweep checks which baseline entries are stale, which does not depend on test order. The
-    py_ci_shared plugin only adds gate items declared under ``[tool.py_ci_shared]``, so it is kept where the consumer has them.
+    py_ci_shared plugin only adds gate items declared under ``[tool.py_ci_shared]``, so it is kept where the consumer has them; dash,
+    hypothesis, benchmark and anyio go only where nothing in the tree or its pytest configuration names them (``_plugin_isolation_flags``).
     """
-    from ._mutation_runner import _gates_configured
+    from ._mutation_runner import _plugin_isolation_flags
 
-    flags = ["-p", "no:randomly"]
-    if not _gates_configured(tree):
-        flags += ["-p", "no:py_ci_shared"]
-    return flags
+    return ["-p", "no:randomly", *_plugin_isolation_flags(tree)]
 
 
 def _run_pytest(tree: Path, files: Sequence[str], out_path: Path, *, python: str, timeout: float) -> tuple[str, str]:
