@@ -204,7 +204,10 @@ def _scan(files: Iterable[Path], min_files: int = 0) -> ScanResult:
 def _reads_in(scan: ScanResult, reader_funcs: Iterable[str] = ()):
     """``(parsed_file, name, node)`` for every env-var read, file by file in scan order."""
     readers = frozenset(reader_funcs)
+    spelled = ("environ", "getenv", *readers)  # a read is os.environ[...], os.getenv(...) (any alias spells one of them) or a call of a project reader
     for parsed in scan:
+        if not any(word in parsed.source for word in spelled):
+            continue
         name_literals = _module_level_name_literals(parsed.tree)
         loop_var_literals = _loop_var_literal_bindings(parsed.tree, name_literals)
         for name, node in _env_var_reads_in_file(parsed.tree, loop_var_literals, ImportAliases.from_tree(parsed.tree), readers):
