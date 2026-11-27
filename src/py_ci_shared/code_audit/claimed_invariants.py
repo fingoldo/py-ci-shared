@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from typing import Callable
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
@@ -48,23 +49,25 @@ def _callers_within(tree: ast.AST) -> dict[str, set[str]]:
 
 def _test_corpus(test_roots: tuple[Path, ...], exclude_dirs: frozenset[str]) -> str:
     """Concatenated source of every Python file under the existing ``test_roots``."""
-    test_corpus = ""
+    parts: list[str] = []
     for troot in test_roots:
         troot = Path(troot)
         if not troot.exists():
             continue
-        for py in _iter_py_files(troot, exclude_dirs):
-            test_corpus += py.read_text(encoding="utf-8", errors="replace")
-    return test_corpus
+        parts.extend(py.read_text(encoding="utf-8", errors="replace") for py in _iter_py_files(troot, exclude_dirs))
+    return "".join(parts)
 
 
-def _is_unenforced_claim(name: str, doc: str, callers_of: dict[str, set[str]], test_corpus: str) -> bool:
-    """True when ``doc`` states an absolute claim and neither ``name`` nor a one-hop caller appears in tests."""
+def _is_unenforced_claim(name: str, doc: str, callers_of: Callable[[], dict[str, set[str]]], test_corpus: str) -> bool:
+    """True when ``doc`` states an absolute claim and neither ``name`` nor a one-hop caller appears in tests.
+
+    ``callers_of`` is asked only for a symbol that makes a claim and is not named in the tests: most modules have none, and building the call map walks
+    every function of the module."""
     if not _CLAIM_RE.search(doc):
         return False
     if name in test_corpus:
         return False
-    return not any(caller in test_corpus for caller in callers_of.get(name, ()))
+    return not any(caller in test_corpus for caller in callers_of().get(name, ()))
 
 
 def _claim_sentence(doc: str) -> str:
@@ -111,7 +114,14 @@ def scan_unenforced_docstring_invariants(
             continue
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
-        callers_of = _callers_within(tree)
+        callers_cache: dict[str, dict[str, set[str]]] = {}
+
+        def callers_of(tree: ast.AST = tree, cache: dict[str, dict[str, set[str]]] = callers_cache) -> dict[str, set[str]]:
+            """The module's call map, built on first use."""
+            if "map" not in cache:
+                cache["map"] = _callers_within(tree)
+            return cache["map"]
+
         for node in walk_tree(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 continue
