@@ -132,7 +132,7 @@ def _self_citations(f: ParsedFile) -> list[Finding]:
     docstrings = _docstring_lines(f)
     out: list[Finding] = []
     for start, end, text, is_code in _texts(f):
-        if not is_code or start in docstrings:
+        if not is_code or start in docstrings or ".py:" not in text:
             continue
         for m in _ANY_CITATION.finditer(text):
             if m.group("path").replace("\\", "/").rsplit("/", 1)[-1] != own:
@@ -180,6 +180,8 @@ def _source_lines(f: ParsedFile) -> list[str]:
 def _symbol_findings(f: ParsedFile, index: _Index) -> list[Finding]:
     out: list[Finding] = []
     for start, _end, text, _is_code in _texts(f):
+        if ".py:" not in text:
+            continue  # every citation pattern ends in `.py:<line>`
         for pattern in _CITATIONS:
             for m in pattern.finditer(text):
                 target = index.resolve(m.group("path"), f)
@@ -200,6 +202,8 @@ def _symbol_findings(f: ParsedFile, index: _Index) -> list[Finding]:
 def _past_end_findings(f: ParsedFile, index: _Index) -> list[Finding]:
     out: list[Finding] = []
     for start, _end, text, _is_code in _texts(f):
+        if ".py:" not in text:
+            continue
         for m in _ANY_CITATION.finditer(text):
             cited = m.group("path")
             target = f if cited.replace("\\", "/").rsplit("/", 1)[-1] == f.path.name and "/" not in cited else index.resolve(cited, f)
