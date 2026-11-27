@@ -62,9 +62,10 @@ def test_quiet_is_refused(quiet):
         build_command(["tests/test_a.py", quiet], installed=_all)
 
 
-# A sample under tmp_path has no [tool.py_ci_shared] table, so the plugin adds nothing here but its startup (about 37 s of the
-# 53 s one real run takes on this machine). These tests check the output file and the exit code, not the plugin.
-_NO_GATES = ["-p", "no:py_ci_shared"]
+# A sample under tmp_path has no [tool.py_ci_shared] table, so the plugin adds nothing here but its startup; the random-order plugin reseeds every
+# numeric library on start and dash registers its fixtures. A real run took 17 to 22 s with them and 4.7 to 4.9 s without (paired, same machine).
+# These tests check the output file and the exit code, not the plugins.
+_NO_GATES = ["-p", "no:py_ci_shared", "-p", "no:randomly", "-p", "no:dash"]
 
 
 def _write_tests(tmp_path: Path, body: str) -> Path:
