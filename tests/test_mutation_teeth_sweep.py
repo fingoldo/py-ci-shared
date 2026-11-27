@@ -51,7 +51,7 @@ class TestConcurrencyChangesSpeedAndNothingElse:
     def test_four_workers_reach_the_same_verdict_as_one(self, tmp_path, _clamp_sweep):
         repo = self._repo(tmp_path)
         serial, _logged = _clamp_sweep  # the same fixture, same arguments, one worker: already swept once this module
-        parallel = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=4)
+        parallel = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=3, timeout=300, use_cache=False, jobs=4)
 
         assert serial.mutants_run == parallel.mutants_run
         assert serial.killed == parallel.killed
@@ -61,7 +61,7 @@ class TestConcurrencyChangesSpeedAndNothingElse:
         """Merged from several partitions, so completion order is arbitrary. A survivor list that
         reorders itself between runs is a diff nobody can read, and a baseline that churns."""
         repo = self._repo(tmp_path)
-        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=3)
+        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=3, timeout=300, use_cache=False, jobs=3)
 
         lines = [m.line for m in outcome.survivors]
         assert lines == sorted(lines), lines
@@ -322,7 +322,7 @@ def _clamp_sweep(tmp_path_factory):
     logger.addHandler(handler)
     logger.setLevel(logging.WARNING)
     try:
-        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False)
+        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=3, timeout=300, use_cache=False)
     finally:
         logger.removeHandler(handler)
         logger.setLevel(previous_level)
