@@ -178,6 +178,16 @@ def _rewrite_findings(f: ParsedFile, fn: _FunctionNode, nodes: list[ast.AST], al
     return out
 
 
+def _can_fire(source: str) -> bool:
+    """Whether the text spells what either rule needs, so a file that does not is not walked.
+
+    ``npsave-suffix`` needs an np.save-family call (``save``) whose first argument is renamed (``replace``, ``rename`` or ``move``);
+    ``in-place-rewrite`` needs a ``write_text``/``write_bytes``/``open`` write to a path that mentions cache or baseline."""
+    saves_and_renames = "save" in source and ("replace" in source or "rename" in source or "move" in source)
+    rewrites = ("write_text" in source or "write_bytes" in source or "open" in source) and _CACHE_WORD.search(source) is not None
+    return saves_and_renames or rewrites
+
+
 def find_atomic_write_staging(
     root: Union[str, Path, Iterable[Union[str, Path]]],
     *,
@@ -190,6 +200,8 @@ def find_atomic_write_staging(
     scan = scan_python(root, exclude=DEFAULT_EXCLUDE | frozenset(exclude_parts), use_git=use_git)
     findings: list[Finding] = []
     for f in scan:
+        if not _can_fire(f.source):
+            continue
         aliases = ImportAliases.from_tree(f.tree)
         lines = f.source.splitlines()
         for fn in (n for n in _fast_walk(f.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
