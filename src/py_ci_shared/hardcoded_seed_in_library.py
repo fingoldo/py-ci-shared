@@ -47,6 +47,7 @@ SUPPRESSION = "# seed-ok:"
 DEFAULT_EXCLUDE_FRAGMENTS = ("tests/", "_benchmarks/")
 
 _SEED_PARAM_RE = re.compile(r"(?:^|_)(?:seed|random_state|random_generator|generator|rng|rs)s?(?:$|_)")
+_SEED_WORD = re.compile(r"(?:\b|_)(?:seed|random_state|random_generator|generator|rng|rs)s?(?:\b|_)")  # the parameter regex above, read off the text
 _SEED_KEYWORDS = frozenset({"random_state", "seed", "random_seed", "rng", "rand_state", "seed_value"})
 _SEEDERS = frozenset(
     {
@@ -382,8 +383,8 @@ def find_hardcoded_seed_in_library(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
-        if any(f"/{fragment}" in f"/{parsed.rel}" for fragment in skipped):
-            continue
+        if any(f"/{fragment}" in f"/{parsed.rel}" for fragment in skipped) or not _SEED_WORD.search(parsed.source):
+            continue  # a finding is inside a function with its own seed-like parameter, and that parameter's name is in the text
         out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree, scoped=True), parsed.source.splitlines()))
     return sorted(out, key=lambda f: (f.path, f.line))
 
