@@ -117,6 +117,10 @@ def _reads(func: ast.AST) -> tuple[set[str], bool]:
 _TEST_DOUBLE_PREFIXES = ("fake", "mock", "stub", "dummy", "_fake", "_mock", "_stub", "_dummy")
 
 
+#: The only nodes a def or class can sit under: statements, `except` clauses and `match` cases. The walk skips every expression below them.
+_HOLDERS = (ast.stmt, ast.excepthandler, *((ast.match_case,) if hasattr(ast, "match_case") else ()))
+
+
 def _is_test_double(name: str, prefix: str) -> bool:
     """A fake, mock, stub or dummy by name: the function, or the class it is a method of (41-T8).
 
@@ -148,7 +152,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
 
     def visit(node: ast.AST, prefix: str, in_protocol: bool, subclass: bool = False) -> None:
         # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
-        pending: list[tuple[ast.AST, str, bool, bool]] = [(child, prefix, in_protocol, subclass) for child in reversed(child_nodes(node))]
+        pending: list[tuple[ast.AST, str, bool, bool]] = [(child, prefix, in_protocol, subclass) for child in reversed(child_nodes(node)) if isinstance(child, _HOLDERS)]
         while pending:
             child, pfx, proto, sub = pending.pop()
             if isinstance(child, ast.ClassDef):
@@ -158,7 +162,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
                 inner = (f"{pfx}{child.name}.<locals>.", False, False)
             else:
                 inner = (pfx, proto, sub)
-            pending.extend((grandchild, *inner) for grandchild in reversed(child_nodes(child)))
+            pending.extend((grandchild, *inner) for grandchild in reversed(child_nodes(child)) if isinstance(grandchild, _HOLDERS))
 
     def check(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], prefix: str, in_protocol: bool, subclass: bool = False) -> None:
         a = func.args
