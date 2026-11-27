@@ -8,18 +8,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _unreleased() -> str:
-    """The notes of the next release: its ``## Unreleased`` heading, or once prepared, the heading of the version in pyproject."""
+def _notes_naming(*needles: str) -> str:
+    """The CHANGELOG section (a ``## `` heading to the next) that holds all *needles*: the entries these tests pin were written for the release then
+    in preparation and stay in that release's section once it ships."""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    version = re.search(r'^version = "([^"]+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"), re.M).group(1)
-    heading = re.search(r"^## (?:Unreleased[^\n]*|" + re.escape(version) + r")\s*$", text, re.M)
-    start = heading.start()
-    end = text.index("\n## ", start + 1)
-    return text[start:end]
+    sections = re.split(r"(?m)^(?=## )", text)
+    return next(sec for sec in sections if all(n in sec for n in needles))
 
 
 def test_43_t1_core_only_find_spec_change_has_behaviour_change_entry() -> None:
-    section = _unreleased()
+    section = _notes_naming("ci_install_covers_entry_imports", "find_spec")
     bullets = [b for b in section.split("\n- ") if "ci_install_covers_entry_imports" in b]
     assert any("Behaviour change" in b and "find_spec" in b and "What to do:" in b for b in bullets)
 
@@ -37,7 +35,7 @@ def test_43_t3_corpus_drift_has_no_dead_mlframe_branch() -> None:
 
 
 def test_43_t4_changelog_records_mlframe_leaving_consumers_toml() -> None:
-    section = _unreleased()
+    section = _notes_naming("mlframe", "configs/consumers.toml", "accept: true")
     assert "mlframe" in section
     assert "configs/consumers.toml" in section
     assert "accept: true" in section

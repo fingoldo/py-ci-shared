@@ -2,6 +2,10 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## Unreleased (next: 1.23.17)
+
+- Faster gates on large trees, same findings (paired old-versus-new runs on one machine, CPU time): `_gate_report.line_has_marker` skips its comment scan on a line that does not hold the marker, and `machine_specific_paths` rejects a line that holds none of its rule markers before the five rule scans (the gate on autopsia's tree: 126.8 s to 44.1 s and 126.6 s to 37.0 s); `getattr_literal_on_known_dataclass` walks only the modules that name a known dataclass (31.9 s to 4.1 s); `unresolved_module_attributes` walks each scope once, not three times (88.7 s to 50.4 s); `claimed_invariants` builds its call map only for a symbol that needs it and joins the test corpus once (65.4 s to 14.9 s). The mutation harness and `stale_baseline_sweep` switch off the random-order and dash plugins (and the py_ci_shared plugin where the tree declares no gates) in nested runs. Nothing to do.
+
 ## 1.23.16
 
 - `doc_identifier_parity` checks each distinct backticked token against the corpus once, in two passes; large batches run in a process pool over one shared-memory copy of the corpus. The autopsia identifier gate went from 588.5 s to 74.1 s with the same answers.

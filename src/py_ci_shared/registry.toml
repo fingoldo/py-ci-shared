@@ -41,7 +41,7 @@ summary = "Standard-library API newer than the ``requires-python`` floor, outsid
 name = "append_only_log_shrink"
 kind = "gate"
 entries = ["assert_append_only_log_shrink"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A first-parent commit may not leave an append-only data file (JSONL, gzipped JSONL) with fewer rows than its parent; waived by an Append-Only-Shrink: trailer"
 
 [[gate]]
@@ -124,7 +124,7 @@ summary = "Apply Black's reformatting to a file, EXCEPT for opcodes matching exc
 [[gate]]
 name = "bump_pin"
 kind = "cli"
-since = "1.23.16"
+since = "1.23.12"
 cli = true
 summary = "Dry-run-by-default rewrite of one consumer checkout's py-ci-shared pin lines (workflow uses, ref inputs, pre-commit rev, requirements URLs) to a single ref"
 
@@ -406,20 +406,20 @@ summary = "A package does not import or reach underscore-private names of anothe
 name = "cuda_atomic_determinism"
 kind = "gate"
 entries = ["assert_cuda_atomic_determinism"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "Every CUDA kernel with a floating-point atomicAdd carries a written determinism note, because a float atomic sum is order-dependent while integer counts are exact"
 
 [[gate]]
 name = "cuda_barrier_divergence"
 kind = "gate"
 entries = ["assert_cuda_barrier_divergence"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "CUDA kernel strings place no __syncthreads() inside thread-dependent control flow (advisory: nor after a thread-dependent return)"
 
 [[gate]]
 name = "cuda_clang_tidy"
 kind = "cli"
-since = "1.23.16"
+since = "1.23.12"
 cli = true
 summary = "Runs the CUDA.md 17 clang-tidy pass over the CUDA kernel strings of a package (placeholders resolved, unresolved ones reported, absence of clang-tidy a loud skip)"
 
@@ -434,28 +434,28 @@ summary = "A CUDA kernel reads global memory coalesced: no thread-derived row ti
 name = "cuda_const_restrict"
 kind = "gate"
 entries = ["assert_cuda_const_restrict"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A CUDA kernel pointer parameter the kernel never writes through is declared const (and __restrict__ where it does not alias)"
 
 [[gate]]
 name = "cuda_device_idioms"
 kind = "gate"
 entries = ["assert_cuda_device_idioms"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "Three CUDA device idioms, each one line with a documented replacement and a regression to catch when it is written: literal device ids, small-integer cupy power, direct axis-0 device sorts"
 
 [[gate]]
 name = "cuda_fallback_logged"
 kind = "gate"
 entries = ["assert_cuda_fallback_logged"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A CUDA handler that catches a device failure and silently finishes on the CPU hides a slowdown: say so with a log, a throttled warning, or re-raise"
 
 [[gate]]
 name = "cuda_grid_caps"
 kind = "gate"
 entries = ["assert_cuda_grid_caps"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A CUDA launch grid is not capped by a literal tuned on one card (min(64, ...), a *_BLOCKS constant of 16..512 used in a grid) instead of following SM count x resident blocks x waves"
 
 [[gate]]
@@ -469,7 +469,7 @@ summary = "A kernel factory kernel(cp, real) that the register-pressure registry
 name = "cuda_kernel_fp_types"
 kind = "gate"
 entries = ["assert_cuda_kernel_fp_types"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A type-generic CUDA kernel source ({REAL}/{ACC}) contains no bare double or float, and no unsuffixed FP64 literal on a REAL value (advisory)"
 
 [[gate]]
@@ -503,14 +503,14 @@ summary = "AST extraction of the CUDA kernel source strings of a package: every 
 name = "cuda_ktc_residency"
 kind = "gate"
 entries = ["assert_cuda_ktc_residency"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A GPU-capable kernel-tuning-cache registration (kernel_tuner with gpu_capable) declares its residency scenarios (residencies=, a module _SWEEP_RESIDENCIES) or states the single boundary with a reasoned marker"
 
 [[gate]]
 name = "cuda_launch_bounds_literal"
 kind = "gate"
 entries = ["assert_cuda_launch_bounds_literal"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A __launch_bounds__(threads, minBlocks) must not hard-code minBlocks as a number tuned on one card"
 
 [[gate]]
@@ -524,13 +524,13 @@ summary = "A CUDA kernel launch takes its block size from the device (occupancy,
 name = "cuda_nvrtc_headers"
 kind = "gate"
 entries = ["assert_cuda_nvrtc_headers"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "No CUDA kernel source uses a host-header macro (INFINITY, NAN, FLT_MAX, INT_MAX, ...) that NVRTC leaves undefined"
 
 [[gate]]
 name = "cuda_offline_arch"
 kind = "library"
-since = "1.23.16"
+since = "1.23.12"
 summary = "The generic body of an offline per-architecture CUDA kernel test: which architectures, whether the toolchain is there, and what a ptxas result must satisfy"
 
 [[gate]]
@@ -543,42 +543,42 @@ summary = "Offline NVRTC to ptxas build of a CUDA kernel source and its per-entr
 name = "cuda_optout_allocations"
 kind = "gate"
 entries = ["assert_no_device_allocations", "assert_optout_env_honoured"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "Allocation-counting harness for a GPU opt-out (cupy allocator and numba device arrays, frame-walk probe allowlist) plus a check that the opt-out variables are honoured"
 
 [[gate]]
 name = "cuda_parity_test_shape"
 kind = "gate"
 entries = ["assert_cuda_parity_test_shape"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A GPU-versus-host parity test runs on two or more independent seeds or datasets"
 
 [[gate]]
 name = "cuda_profile_records"
 kind = "gate"
 entries = ["assert_cuda_profile_records"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "Every module that defines a CUDA kernel has a profile record with the contract's required fields, and the known-missing records may only shrink"
 
 [[gate]]
 name = "cuda_tree_reduction_block"
 kind = "gate"
 entries = ["assert_cuda_tree_reduction_block"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A block-size helper whose result feeds a CUDA tree-reduction kernel must return a power of two"
 
 [[gate]]
 name = "cuda_warp_intrinsics"
 kind = "gate"
 entries = ["assert_cuda_warp_intrinsics"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "CUDA kernel strings use no legacy unmasked __shfl* (undefined on sm_70+) and never call a _sync intrinsic with the full warp mask inside a thread-dependent if"
 
 [[gate]]
 name = "cuda_wide_load_alignment"
 kind = "gate"
 entries = ["assert_cuda_wide_load_alignment"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A CUDA kernel that casts a byte pointer to a wider type must declare a stride, pitch, pad or ld parameter for the alignment"
 
 [[gate]]
@@ -638,7 +638,7 @@ summary = "Assert that something an audit deliberately REMOVED has not come back
 name = "deprecated_docstring_without_warn"
 kind = "gate"
 entries = ["assert_deprecated_docstrings_warn"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A public function whose docstring says it is deprecated must call warnings.warn or carry a deprecated decorator"
 
 [[gate]]
@@ -779,7 +779,7 @@ summary = "Column-order, n_jobs and frame-type invariance assertions for estimat
 name = "estimator_mixin_order"
 kind = "gate"
 entries = ["assert_estimator_mixin_order"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "An sklearn mixin listed after BaseEstimator in a class statement silently breaks is_classifier/is_regressor"
 
 [[gate]]
@@ -807,7 +807,7 @@ summary = "Fail-open exception handlers in gate code"
 name = "fit_at_test_module_import"
 kind = "gate"
 entries = ["assert_no_fit_at_test_module_import"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A test module must not call .fit, .fit_transform or .fit_predict at import time (module level, class body, decorators, defaults)"
 
 [[gate]]
@@ -883,7 +883,7 @@ summary = "Every git-URL dependency in pyproject.toml is pinned to a full commit
 name = "global_write_via_reexport_alias"
 kind = "gate"
 entries = ["assert_global_write_via_reexport_alias"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A write to a global through a re-exporting facade changes the facade's copy, not the global"
 
 [[gate]]
@@ -1037,7 +1037,7 @@ summary = "A clear/reset/release method touches only self state while sibling me
 name = "ktc_sweep_tolerances"
 kind = "gate"
 entries = ["assert_ktc_sweep_tolerances"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A kernel-tuning equivalence sweep must not carry a tolerance far looser than its own claim"
 
 [[gate]]
@@ -1263,7 +1263,7 @@ summary = "Assertion shapes that pass whether or not the property under test hol
 name = "numba_cuda_kernels"
 kind = "gate"
 entries = ["assert_numba_cuda_kernels"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "Kernels written in Python with numba.cuda are checked for the four mistakes that corrupt results silently, which C++-string CUDA gates cannot see"
 
 [[gate]]
@@ -1340,7 +1340,7 @@ summary = "The doctests a package ships actually run, and there are some to run"
 name = "pandas_frame_copy_default"
 kind = "gate"
 entries = ["assert_pandas_frame_copy_default"]
-since = "1.23.16"
+since = "1.23.15"
 summary = "``pd.DataFrame`` built over existing arrays without ``copy=False`` copies them (pandas 3 default)"
 
 [[gate]]
@@ -1472,7 +1472,7 @@ summary = "A hook or CI step that names test paths, and runs none of them becaus
 name = "pytest_defaults_declared"
 kind = "gate"
 entries = ["assert_pytest_defaults_declared"]
-since = "1.23.16"
+since = "1.23.13"
 summary = "A consumer pytest addopts must carry the mandatory flags, so a bare pytest run gets them too"
 
 [[gate]]
@@ -1533,7 +1533,7 @@ summary = "The repository tracks nothing it generates, and carries the files its
 name = "required_call_kwargs"
 kind = "gate"
 entries = ["assert_required_call_kwargs"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A configured call (asyncpg.create_pool, asyncpg.connect by default) must pass one of its configured keywords"
 
 [[gate]]
@@ -1574,7 +1574,7 @@ summary = "``rollback()`` in a loop's ``except`` handler, then on to the next it
 name = "route_literal_after_catchall"
 kind = "gate"
 entries = ["assert_route_literal_after_catchall"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A literal route must not come after a same-shape parameter route that shadows it"
 
 [[gate]]
@@ -1714,7 +1714,7 @@ summary = "Execute every SQL statement a project ships against a real PostgreSQL
 name = "sql_where_mixed_and_or"
 kind = "gate"
 entries = ["assert_sql_where_mixed_and_or"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A WHERE clause must not mix AND and OR at one parenthesis level"
 
 [[gate]]
@@ -1848,7 +1848,7 @@ summary = "Every declared test partition is actually selected by some runner"
 name = "thread_lifecycle"
 kind = "gate"
 entries = ["assert_thread_lifecycle"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A threading.Thread must be daemonised, joined, or owned by a context manager"
 
 [[gate]]
@@ -1868,7 +1868,7 @@ summary = "``tomllib`` on the interpreters that have it, ``tomli`` (the same par
 name = "tool_config_dead_entries"
 kind = "gate"
 entries = ["assert_tool_config_dead_entries"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A pyproject ignore, omit or override must name something that exists"
 
 [[gate]]
@@ -1888,7 +1888,7 @@ summary = "The linter versions every consuming repo runs, defined in one place"
 name = "tracked_env_packages"
 kind = "gate"
 entries = ["assert_tracked_env_packages"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A tracked Python file under an env, venv, build or dist directory is invisible to code_audit"
 
 [[gate]]
@@ -1930,7 +1930,7 @@ summary = "A function whose body never runs under the unit coverage run"
 name = "unpruned_tree_walk"
 kind = "gate"
 entries = ["assert_unpruned_tree_walk"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A function that walks a repository root must prune agent worktrees"
 
 [[gate]]
@@ -2055,7 +2055,7 @@ summary = "How many workers the machine can spare now: half of its free physical
 name = "workflow_installs_pinned"
 kind = "gate"
 entries = ["assert_workflow_installs_pinned"]
-since = "1.23.16"
+since = "1.23.12"
 summary = "A CI step that clones or pip-installs a first-party repo from git must pin a commit"
 
 [[gate]]
