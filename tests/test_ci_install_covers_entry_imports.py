@@ -423,6 +423,7 @@ def test_single_process_reports_the_same_failures_in_the_same_order_as_one_inter
         with pytest.raises(AssertionError) as raised:
             assert_entry_imports_without_extras(root, entries, ["signal"], name_map=mapping, single_process=single)
         messages.append(str(raised.value))
+    assert len(messages) == 2  # both modes ran, so the loop below judges two messages
     for message in messages:
         assert message.index("import mypkg.bad_two") < message.index("import mypkg.bad_one")
         assert "2 entry(ies) fail to start" in message
