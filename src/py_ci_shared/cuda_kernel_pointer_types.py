@@ -152,6 +152,11 @@ def _probe_findings(tree: ast.Module, rel: str, py_lines: list[str]) -> list[Fin
     return out
 
 
+def _can_find(source: str) -> bool:
+    """Whether the text can hold either finding: a kernel signature needs ``__global__`` in a string, a type probe needs ``dtype``, ``"float"`` and ``"double"``."""
+    return "__global__" in source or ("dtype" in source and "float" in source and "double" in source)
+
+
 def find_cuda_kernel_pointer_types(
     root: Union[str, Path],
     *,
@@ -169,6 +174,8 @@ def find_cuda_kernel_pointer_types(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
+        if not _can_find(parsed.source):
+            continue
         py_lines = parsed.source.splitlines()
         aliases = ImportAliases.from_tree(parsed.tree)
         float32_module = "float32" in parsed.source  # the module says it deals in float32 buffers: its `float*` kernels are deliberate (53-T13)
