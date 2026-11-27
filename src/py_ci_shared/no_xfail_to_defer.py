@@ -84,6 +84,7 @@ EXTERNAL_WORDS = frozenset(
 )
 _TRACKED = re.compile(r"#\d+|\b[A-Z][A-Z0-9]+-\d+\b|https?://|\bissue\b|\bgh-\d+", re.IGNORECASE)
 _MARK_NAMES = {"xfail": "xfail", "skip": "skip"}
+_JUDGED_WORDS = ("xfail", "skip", "known_gap")
 _REASON_VARIABLE = re.compile(r"reason|xfail|gap|why|msg|message|note", re.IGNORECASE)
 
 
@@ -307,6 +308,8 @@ def find_xfail_to_defer(
     scan = scan_python(tests_root, exclude=DEFAULT_EXCLUDE | frozenset(exclude_parts), use_git=use_git)
     findings: list[Finding] = []
     for f in scan:
+        if not any(word in f.source for word in _JUDGED_WORDS):
+            continue  # every judged construct (xfail, a skip, a known_gap call) spells one of these, under any import alias
         aliases = ImportAliases.from_tree(f.tree)
         parents = {id(c): n for n in _fast_walk(f.tree) for c in child_nodes(n)}
         conditional = _conditional_marker_calls(f.tree)
