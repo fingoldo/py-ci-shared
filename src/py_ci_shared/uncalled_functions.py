@@ -148,12 +148,19 @@ def _definitions(tree: ast.Module, path: Path, root: Path) -> dict[str, str]:
 _OWN_NODES: "weakref.WeakKeyDictionary[ast.AST, list[ast.AST]]" = weakref.WeakKeyDictionary()
 
 
+_HEADER_IDS: "weakref.WeakKeyDictionary[ast.AST, set[int]]" = weakref.WeakKeyDictionary()
+
+
 def _header_ids(fn: _FuncDef) -> set[int]:
     """Ids of the nodes in a def's header (decorators, parameters with their defaults and annotations, return annotation).
 
-    The index lists a def's header with its body; a local name is bound by the body only, so the header is left out."""
-    parts: list[ast.AST] = [*fn.decorator_list, fn.args, *([fn.returns] if fn.returns is not None else [])]
-    return {id(sub) for part in parts for sub in shared_walk(part)}
+    The index lists a def's header with its body; a local name is bound by the body only, so the header is left out.
+    Computed once per def: the binding pass and the body visit both ask."""
+    cached = _HEADER_IDS.get(fn)
+    if cached is None:
+        parts: list[ast.AST] = [*fn.decorator_list, fn.args, *([fn.returns] if fn.returns is not None else [])]
+        cached = _HEADER_IDS[fn] = {id(sub) for part in parts for sub in shared_walk(part)}
+    return cached
 
 
 def _body_nodes_by_walk(fn: "Union[_FuncDef, ast.Lambda]") -> list[ast.AST]:
@@ -166,6 +173,13 @@ def _body_nodes_by_walk(fn: "Union[_FuncDef, ast.Lambda]") -> list[ast.AST]:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             stack.extend(child_nodes(node))
     return out
+
+
+_BINDING_TYPES = (ast.Global, ast.Nonlocal, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Import, ast.ImportFrom, ast.ExceptHandler)
+#: Node types that can never bind a name here. `ast.Name` is not in it: a Store/Del name binds, a Load name does not, and that is read off the node.
+_NOT_BINDING = frozenset(
+    t for t in vars(ast).values() if isinstance(t, type) and issubclass(t, ast.AST) and not issubclass(t, _BINDING_TYPES) and t is not ast.Name and t is not ast.AST
+)
 
 
 def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
@@ -181,6 +195,8 @@ def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
     else:
         nodes = _body_nodes_by_walk(fn)
     for node in nodes:
+        if type(node) in _NOT_BINDING:  # the common case (Load names, calls, constants, attributes...): one set lookup instead of five isinstance
+            continue
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             declared_outer.update(node.names)
         elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
