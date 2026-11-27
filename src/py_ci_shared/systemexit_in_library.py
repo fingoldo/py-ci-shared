@@ -43,6 +43,7 @@ MARKER = "exit-ok"
 DEFAULT_ENTRY_NAMES = r"^_*(?:main|cli|run_cli|parse_args|entry|entrypoint)$|^_*(?:main|cli)_"
 DEFAULT_OPT_IN_PARAM = r"exit"
 _EXIT_CALLS = frozenset({"exit", "quit", "_exit"})
+_EXIT_WORDS = re.compile(r"exit|quit|abort", re.IGNORECASE)  # `SystemExit` matches through `exit`
 
 
 def _has_main_guard(tree: ast.Module) -> bool:
@@ -179,7 +180,8 @@ def find_systemexit_in_library(
     entry, opt_in = re.compile(entry_names, re.IGNORECASE), re.compile(opt_in_param_regex, re.IGNORECASE)
     out: list[Finding] = []
     for parsed in parsed_files:
-        if not include_tests and _is_test_path(parsed.rel):
+        # Every exit spells exit, quit, abort or SystemExit, under whatever alias it was imported: a file without them has none.
+        if (not include_tests and _is_test_path(parsed.rel)) or not _EXIT_WORDS.search(parsed.source):
             continue
         guarded = _has_main_guard(parsed.tree)
         aliases = ImportAliases.from_tree(parsed.tree, scoped=True)
