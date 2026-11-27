@@ -53,6 +53,7 @@ RULE_PRODUCT = "cuda-int-index-product"
 MARKER = "width-ok:"
 _KERNEL_CLASSES = frozenset({"RawKernel", "RawModule", "ElementwiseKernel", "ReductionKernel"})
 _NAME_SUFFIXES = ("_SRC", "_KERNEL", "_CODE")
+_KERNEL_WORDS = ("__global__", *sorted(_KERNEL_CLASSES))
 _PLACEHOLDER = "__PLACEHOLDER__"
 # one left-to-right pass, so a ``//`` inside a string is text and a quote inside a comment is prose
 _TOKEN = re.compile(r"/\*.*?\*/|//[^\n]*|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.[^'\n]*|[^'\\\n])'", re.DOTALL)
@@ -367,6 +368,8 @@ def find_cuda_kernel_integer_width(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
+        if not any(word in parsed.source for word in _KERNEL_WORDS):
+            continue  # a unit is an argument of a cupy kernel class or a string holding __global__: one of these words is in the text
         out.extend(_findings_in(parsed.tree, parsed.source, parsed.rel, ImportAliases.from_tree(parsed.tree)))
     return sorted(out, key=lambda f: (f.path, f.line, f.rule))
 
