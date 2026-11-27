@@ -888,6 +888,18 @@ def _pair_is_exempt(lhs: ast.AST, rhs: ast.AST, path_names: frozenset[str] = fro
     return _is_getattr_alias_fallback(lhs, rhs) or _lhs_default_is_also_the_or_fallback(lhs, rhs)
 
 
+def _symbol_at(tree: ast.AST, memo: dict[str, dict[int, str]], node: ast.AST) -> str:
+    """The dotted name of the symbol enclosing *node*; the module's map is built on the first ask, as only a reported site needs it."""
+    if "map" not in memo:
+        memo["map"] = _enclosing_symbols(tree)
+    return memo["map"].get(id(node), "")
+
+
+def _or_nodes_of(tree: ast.AST) -> list[ast.BoolOp]:
+    """Every ``a or b`` of a module in walk order."""
+    return [node for node in walk_tree(tree) if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)]
+
+
 def scan_default_via_or_trap(
     root: Path,
     exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
@@ -913,13 +925,14 @@ def scan_default_via_or_trap(
             continue
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
+        or_nodes = _or_nodes_of(tree)
+        if not or_nodes:
+            continue  # the four per-module maps below exist only to judge an ``or``
         parent_map = _build_parent_field_map(tree)
         bool_names = _module_boolean_names(tree)
         path_names = _module_path_names(tree)
-        symbols = _enclosing_symbols(tree)
-        for node in walk_tree(tree):
-            if not isinstance(node, ast.BoolOp) or not isinstance(node.op, ast.Or):
-                continue
+        symbol_memo: dict[str, dict[int, str]] = {}
+        for node in or_nodes:
             # Skip ordinary logical-OR control flow (if/while/assert/ternary
             # tests, comprehension filters) -- the result is consumed only
             # as a bool, never assigned/returned/passed as a "default value".
@@ -948,7 +961,7 @@ def scan_default_via_or_trap(
                 # `max(1, os.cpu_count() or 1)`). The BoolOp here is the `or`
                 # node, so check whether its left operand is wrapped in such a
                 # call-chain back up the tree.
-                sev, detail = _classify(lhs, rhs, symbols.get(id(node), ""))
+                sev, detail = _classify(lhs, rhs, _symbol_at(tree, symbol_memo, node))
                 findings.append(
                     Finding(
                         check="default_via_or",
