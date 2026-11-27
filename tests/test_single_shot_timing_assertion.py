@@ -583,3 +583,46 @@ def _justify_entries(path, seeded_by, branch):
     for key, entry in data["entries"].items():
         entry["note"] = f"{key} is seeded by {seeded_by} to exercise the {branch} of the gate, and is not a defect in repo code."
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_a_test_function_under_a_compound_statement_or_class_is_still_read(tmp_path):
+    """The walk descends only through statements, except clauses and match cases; a def there is a test as much as one at module level."""
+    body = """
+    import sys
+    import time
+
+    if sys.platform:
+        def test_in_if():
+            t0 = time.perf_counter()
+            a()
+            t_a = time.perf_counter() - t0
+            t0 = time.perf_counter()
+            b()
+            t_b = time.perf_counter() - t0
+            assert t_a / t_b >= 1.15
+
+    try:
+        pass
+    except ImportError:
+        def test_in_except():
+            t0 = time.perf_counter()
+            a()
+            t_a = time.perf_counter() - t0
+            t0 = time.perf_counter()
+            b()
+            t_b = time.perf_counter() - t0
+            assert t_a / t_b >= 1.15
+
+    class TestGroup:
+        def test_in_class(self):
+            t0 = time.perf_counter()
+            a()
+            t_a = time.perf_counter() - t0
+            t0 = time.perf_counter()
+            b()
+            t_b = time.perf_counter() - t0
+            assert t_a / t_b >= 1.15
+    """
+    root = _corpus(tmp_path, {"test_x.py": textwrap.dedent(body).encode()})
+    names = sorted(f.message.split(":")[0] for f in find_single_shot_timing_assertion(root, use_git=False))
+    assert names == ["TestGroup.test_in_class", "test_in_except", "test_in_if"]

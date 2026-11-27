@@ -91,6 +91,8 @@ _SKIP_CAUSE = re.compile(
 _Helper = tuple[str, Optional[frozenset[int]]]
 _FuncDef = (ast.FunctionDef, ast.AsyncFunctionDef)
 _Scoped = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+#: The only nodes a def or class can sit under: statements, `except` clauses and `match` cases. An expression holds neither.
+_STATEMENT_HOLDERS = (ast.stmt, ast.excepthandler, *((ast.match_case,) if hasattr(ast, "match_case") else ()))
 
 
 class _Val:
@@ -410,7 +412,7 @@ def _test_functions(tree: ast.Module, markers: frozenset[str]) -> list[tuple[str
                 if child.name.startswith("test") and not exempt and not _marked(child, markers):
                     out.append((f"{prefix}{child.name}", child))
                 visit(child, f"{prefix}{child.name}.", exempt)
-            else:
+            elif isinstance(child, _STATEMENT_HOLDERS):
                 visit(child, prefix, exempt)
 
     visit(tree, "", False)
