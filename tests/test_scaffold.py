@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -163,7 +164,7 @@ def test_the_cli_subcommand(layout, capsys):
     assert "already in registry.toml" in capsys.readouterr().err
 
 
-@pytest.mark.timeout(1200)  # three nested pytest runs; 82 s under -n 4, past 300 s under full-suite load (WF-12)
+@pytest.mark.timeout(1200)  # one nested pytest session over three groups of ids; it was three sessions, 82 s under -n 4 and past 300 s under full-suite load (WF-12)
 def test_the_scaffold_passes_the_inventory_and_fails_until_filled_in(full_layout):
     """In the copy: the inventory accepts the new gate, while its own tests and its canary fail."""
     new_gate(full_layout, "unfinished_gate", summary="Not written yet")
@@ -171,11 +172,7 @@ def test_the_scaffold_passes_the_inventory_and_fails_until_filled_in(full_layout
     inherited = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_XDIST")}
     env = dict(inherited, PYTHONPATH=str(full_layout / "src"), PYTHONUNBUFFERED="1", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
 
-    def pytest_run(*ids: str) -> subprocess.CompletedProcess:
-        cmd = [sys.executable, "-m", "pytest", "-p", "no:randomly", "-p", "no:cacheprovider", "-rA", *ids]
-        return subprocess.run(cmd, cwd=full_layout, env=env, capture_output=True, text=True, check=False)
-
-    passing = pytest_run(
+    passing_ids = (
         "tests/test_package_inventory.py::test_every_module_is_registered_or_declared_internal",
         "tests/test_package_inventory.py::test_registry_names_are_unique_and_sorted",
         "tests/test_package_inventory.py::test_each_spec_matches_its_module[unfinished_gate]",
@@ -183,12 +180,24 @@ def test_the_scaffold_passes_the_inventory_and_fails_until_filled_in(full_layout
         "tests/test_package_inventory.py::test_the_readme_catalogue_is_the_rendered_registry",
         "tests/test_gate_teeth.py::test_every_scanning_gate_has_a_canary_or_a_reasoned_exemption",
     )
-    assert passing.returncode == 0 and "6 passed" in passing.stdout, passing.stdout[-3000:] + passing.stderr[-2000:]
-    failing = pytest_run("tests/test_unfinished_gate.py", "tests/test_gate_teeth.py::test_canary_fixture_has_teeth[unfinished_gate]")
-    assert failing.returncode == 1 and "6 failed" in failing.stdout and " passed" not in failing.stdout, failing.stdout[-3000:]
-    canary = pytest_run(
+    failing_ids = ("tests/test_unfinished_gate.py", "tests/test_gate_teeth.py::test_canary_fixture_has_teeth[unfinished_gate]")
+    canary_ids = (
         "tests/test_gate_teeth.py::test_gate_bites_its_canary[unfinished_gate-violation]",
         "tests/test_gate_teeth.py::test_gate_bites_its_canary[unfinished_gate-clean]",
     )
-    assert canary.returncode == 1 and "2 failed" in canary.stdout, canary.stdout[-3000:]
-    assert "not naming the seed" in canary.stdout and "reported its clean control" in canary.stdout
+    # One nested session for all three groups: a session start costs several seconds, and the three groups do not interact (each id is judged on its own outcome line).
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:randomly", "-p", "no:cacheprovider", "-rA", *passing_ids, *failing_ids, *canary_ids],
+        cwd=full_layout,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    outcomes = {match.group(2): match.group(1) for match in re.finditer(r"^(PASSED|FAILED|ERROR) (\S+)", run.stdout, re.MULTILINE)}
+    tail = run.stdout[-3000:] + run.stderr[-2000:]
+    assert [outcomes.get(i) for i in passing_ids] == ["PASSED"] * 6, tail
+    unfinished = {i: o for i, o in outcomes.items() if i.startswith("tests/test_unfinished_gate.py") or i == failing_ids[1]}
+    assert len(unfinished) == 6 and set(unfinished.values()) == {"FAILED"}, tail
+    assert [outcomes.get(i) for i in canary_ids] == ["FAILED"] * 2, tail
+    assert "not naming the seed" in run.stdout and "reported its clean control" in run.stdout, tail
