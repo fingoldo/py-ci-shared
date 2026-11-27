@@ -118,3 +118,27 @@ def test_scan_roots_excluding_matches_fragments_against_the_root_relative_path(t
     root = _files(tmp_path / "my_tests_dir" / "proj", {"a.py": "x = 1\n", "tests/t.py": "y = 2\n"})
     result = scan_roots_excluding([root], ["tests"])
     assert [Path(f.rel).name for f in result.files] == ["a.py"]
+
+
+@pytest.mark.parametrize("enabled_before", [True, False])
+def test_the_collector_is_paused_during_a_scan_and_left_as_it_was(tmp_path, monkeypatch, enabled_before):
+    """The bulk parse runs with the cyclic collector off (it halves the parse time) and restores the state it found, an exception included."""
+    import gc
+
+    import py_ci_shared._core.scan as scan_module
+
+    _files(tmp_path, {"a.py": "x = 1\n", "b.py": "y = 2\n"})
+    seen: list[bool] = []
+    real = scan_module._parse_one
+    monkeypatch.setattr(scan_module, "_parse_one", lambda path, rel: (seen.append(gc.isenabled()), real(path, rel))[1])
+    (gc.enable if enabled_before else gc.disable)()
+    try:
+        scan_python(tmp_path, use_git=False)
+        assert seen == [False, False]
+        assert gc.isenabled() is enabled_before
+        monkeypatch.setattr(scan_module, "_parse_one", lambda path, rel: 1 / 0)
+        with pytest.raises(ZeroDivisionError):
+            scan_python(tmp_path, use_git=False)
+        assert gc.isenabled() is enabled_before
+    finally:
+        gc.enable()
