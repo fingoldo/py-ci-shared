@@ -284,6 +284,8 @@ def _module_findings(path: Path, tree: ast.Module) -> list[Finding]:
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
+        if not any(stream in parsed.source for stream in _STREAMS):
+            continue  # a swap, a `setattr` and a `redirect_*` call each spell `stdout` or `stderr`
         findings.extend(_module_findings(parsed.path, parsed.tree))
     return findings
 
