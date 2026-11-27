@@ -79,6 +79,9 @@ def scan_readonly_to_numpy_mutation(
         if tree is None:
             continue
         src_lines = _read_src_lines(py)
+        text = "\n".join(src_lines)
+        if "to_numpy" not in text or not any(mutator in text for mutator in _INPLACE_MUTATORS):
+            continue  # a finding needs both a to_numpy() result and an in-place mutator spelled out in the module
         rel = py.relative_to(root).as_posix()
         for func_node in walk_tree(tree):
             if not isinstance(func_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
