@@ -171,6 +171,33 @@ def _record_import(scope: _Scope, node: "Union[ast.Import, ast.ImportFrom]") -> 
             scope.bindings.setdefault(alias.asname or alias.name, []).append(_Binding(node.module or "", node.level, alias.name))
 
 
+_BINDING_TYPES = (
+    ast.FunctionDef,
+    ast.AsyncFunctionDef,
+    ast.ClassDef,
+    ast.Assign,
+    ast.AnnAssign,
+    ast.AugAssign,
+    ast.NamedExpr,
+    ast.For,
+    ast.AsyncFor,
+    ast.withitem,
+    ast.ExceptHandler,
+)
+_PATTERN_BINDING_NAMES = frozenset({"TypeAlias", "MatchAs", "MatchStar", "MatchMapping"})  # `type X = ...` and match patterns, matched by name for 3.9 to 3.11
+_MAY_BIND: "dict[type, bool]" = {}
+
+
+def _may_bind(node: ast.AST) -> bool:
+    """Whether a node of this type can bind a name at all (`_names_bound_by` answers the rest); the answer is per type, so most nodes cost one dict hit."""
+    kind = type(node)
+    answer = _MAY_BIND.get(kind)
+    if answer is None:
+        answer = issubclass(kind, _BINDING_TYPES) or kind.__name__ in _PATTERN_BINDING_NAMES
+        _MAY_BIND[kind] = answer
+    return answer
+
+
 def _build_scope(node: ast.AST, parent: "Optional[_Scope]") -> _Scope:
     scope = _Scope(node, parent)
     scope.own = list(_own_nodes(node))
@@ -181,7 +208,7 @@ def _build_scope(node: ast.AST, parent: "Optional[_Scope]") -> _Scope:
             _record_import(scope, sub)
         elif isinstance(sub, (ast.Global, ast.Nonlocal)):
             scope.global_names.update(sub.names)
-        else:
+        elif _may_bind(sub):
             for name in _names_bound_by(sub):
                 if name != "*":
                     scope.bindings.setdefault(name, []).append(None)
@@ -495,7 +522,11 @@ def _judge_read(node: ast.Attribute, binding: _Binding, exempt: "set[str]", ctx:
 def _scan_file(tree: ast.Module, rel: str, path: Path, dirs: Sequence[Path], resolver: _Resolver, report: AttributeReport) -> None:
     guarded, given = _attribute_guards(tree)
     scopes = list(_scopes_of(tree))
-    hasattr_tested = _hasattr_by_scope(tree)
+    # Every node of the file is in some scope's `own` list, so the list answers "is there a hasattr call at all" without a second walk of the tree.
+    calls_hasattr = any(
+        isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id == "hasattr" for scope in scopes for sub, _shadow in scope.own
+    )
+    hasattr_tested = _hasattr_by_scope(tree) if calls_hasattr else {}
     skipped_seen: set[tuple[str, str, str]] = set()
     for scope in scopes:
         for node, shadow in scope.own:
