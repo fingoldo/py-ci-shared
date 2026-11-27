@@ -179,7 +179,10 @@ def find_wrapper_protocol_parity(
     scan = scan_python(root, min_files=min_files, use_git=use_git)
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
+    spelled = frozenset().union(*sets) if sets else frozenset()
     for parsed in scan:
+        if not any(attr in parsed.source for attr in spelled):
+            continue  # a finding is a copied protocol attribute (`W.cache_clear = I.cache_clear`), so the attribute's name is in the text
         out.extend(_findings_in(parsed.tree, parsed.rel, sets, merged))
     return sorted(out, key=lambda f: (f.path, f.line))
 
