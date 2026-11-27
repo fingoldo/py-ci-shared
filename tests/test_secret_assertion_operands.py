@@ -99,6 +99,17 @@ def test_a_resolver_outside_the_defaults_needs_configuring():
     assert gate.offenders_in_source(OFFENDERS["configured_resolver"]) == []
 
 
+def test_a_module_that_names_no_taint_origin_is_not_parsed():
+    """No `environ`, `getenv`, DSN-shaped or configured resolver name: nothing can be tainted, so even source that does not parse yields no offender."""
+    assert gate.offenders_in_source("def broken(:\n", resolvers={"connection_string"}) == []
+
+
+def test_a_configured_resolver_name_alone_keeps_the_module_in_scope():
+    source = "def test_x():\n    value = connection_string()\n    assert value == 'a'\n"
+    assert gate.offenders_in_source(source) == []
+    assert [qual for qual, _, _ in gate.offenders_in_source(source, resolvers={"connection_string"})] == ["test_x"]
+
+
 def _write(d: Path, files: dict[str, str]) -> Path:
     for rel, text in files.items():
         (d / rel).parent.mkdir(parents=True, exist_ok=True)

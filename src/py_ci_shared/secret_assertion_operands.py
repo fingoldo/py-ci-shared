@@ -258,10 +258,24 @@ def _printed_operands(node: ast.AST) -> list[ast.expr]:
     return []
 
 
+_SOURCE_WORDS = ("environ", "getenv", "dsn", "database_url")
+
+
+def _can_taint(source: str, resolvers: "frozenset[str]") -> bool:
+    """Whether *source* spells any origin of a tainted value: ``environ``, ``getenv``, a DSN-shaped resolver name or a named resolver.
+
+    Every taint starts at one of those names (``_is_environ``, ``_ENV_GETTERS``, ``RESOLVER_NAME``, *resolvers*), so a module
+    without them has no offender and need not be parsed or walked."""
+    lowered = source.lower()
+    return any(word in lowered for word in _SOURCE_WORDS) or any(name in source for name in resolvers)
+
+
 def offenders_in_source(source: str, path: str = "<string>", *, resolvers: Iterable[str] = DEFAULT_RESOLVERS) -> list[tuple[str, int, str]]:
     """``(qualname, line, offending expression)`` for each assertion in *source* that would print a secret-shaped value."""
-    tree = parse_text(source, filename=path)
     resolver_set = frozenset(resolvers)
+    if not _can_taint(source, resolver_set):
+        return []
+    tree = parse_text(source, filename=path)
     found: list[tuple[str, int, str]] = []
 
     def visit(scope: ast.AST, qual: str, inherited: "set[str]") -> None:
