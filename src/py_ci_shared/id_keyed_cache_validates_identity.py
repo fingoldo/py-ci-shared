@@ -42,6 +42,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Union
@@ -270,6 +271,9 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, source: str
     return out
 
 
+_ID_CALL = re.compile(r"\bid\s*\(")
+
+
 def find_id_keyed_cache_validates_identity(
     root: Union[str, Path],
     *,
@@ -286,6 +290,8 @@ def find_id_keyed_cache_validates_identity(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
+        if "id" not in parsed.source or _ID_CALL.search(parsed.source) is None:
+            continue  # every key the gate judges holds a call of the builtin id
         out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source))
     return sorted(out, key=lambda f: (f.path, f.line))
 
