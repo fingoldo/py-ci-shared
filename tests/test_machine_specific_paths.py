@@ -207,3 +207,42 @@ def test_a_sed_expression_is_not_a_db_url(tmp_path):
 def test_a_real_dsn_with_inline_password_is_still_a_db_url(tmp_path):
     _write(tmp_path, "tool/check.sh", 'DSN="postgresql://app:hunter2@db:5432/x"\n')  # pragma: allowlist secret
     assert [r[2] for r in _found(tmp_path)] == ["db-url"]
+
+
+def _prefilter_corpus() -> "list[str]":
+    """Lines that hit each rule in several spellings, near misses, and ordinary config text."""
+    bs = chr(92)
+    return [
+        "path: C:" + bs + "Users" + bs + "alice" + bs + "data",
+        "home = /home/bob/x/",
+        "root: /Users/carol/work/",
+        "cache: D:/models/x",
+        "drive = e:" + bs + "cache",
+        "dir: ~/.cache/huggingface/hub",
+        "dir: x/.CACHE/TORCH",
+        "res: stanza_resources/en",
+        "url: postgresql://u:p@host/db",
+        "url: mysql+pymysql://root:" + "pw" + "@h:3306/x",  # joined so the secret scanner does not read the literal as a credential
+        "time: 12:30:45",
+        "link: https://example.com/a",
+        "owner: C:/Windows/x",
+        "runner: /home/runner/work",
+        "/HOME/Dan/x",
+        '  "id": "abc", "tags": ["a", "b"],',
+        "key = value",
+        "",
+    ]
+
+
+def test_the_candidate_prefilter_never_hides_a_hit(monkeypatch):
+    """A text the prefilter rejects has no hit: the hits with the prefilter equal the hits of the five rule scans alone."""
+    import re
+
+    from py_ci_shared import machine_specific_paths as m
+
+    corpus = _prefilter_corpus()
+    with_filter = [list(m._hits(line, [], workflow=wf)) for line in corpus for wf in (False, True)]
+    monkeypatch.setattr(m, "_CANDIDATE", re.compile(""))
+    without_filter = [list(m._hits(line, [], workflow=wf)) for line in corpus for wf in (False, True)]
+    assert with_filter == without_filter
+    assert any(with_filter), "the corpus must contain real hits, or the comparison proves nothing"

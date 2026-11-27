@@ -72,13 +72,16 @@ def _finding(rel: str, line: int, rule: str, shown: str) -> Finding:
 #: A regular expression's source (``r"\d:\d\d|\Z"``) can look like a drive path; such strings are not paths.
 _REGEX_SOURCE = re.compile(r"\(\?[:P!=<]|\[\^|\\[dswDSW][+*?{\\]|\|\\Z")
 _WORKFLOW_DIR = ".github/"
+#: Every rule needs one of these in the text (a drive letter and a slash, a scheme separator, a home directory, a cache or resources directory), so a
+#: text with none of them has no hit and skips the five rule scans: most lines of a large config corpus.
+_CANDIDATE = re.compile(r"(?i)[a-z]:[\\/]|://|/(?:home|users)/|\.cache|stanza_resources")
 
 
 def _hits(text: str, allow: Sequence[re.Pattern[str]], *, workflow: bool = False) -> Iterator[tuple[int, str, str]]:
     """``(offset, rule, matched text)`` for every rule match in *text* that is not a placeholder or allowed.
 
     A drive-path match inside a more specific match (a user home or a model cache on that drive) is not repeated."""
-    if _REGEX_SOURCE.search(text):
+    if not _CANDIDATE.search(text) or _REGEX_SOURCE.search(text):
         return
     spans: list[tuple[int, int]] = []
     for rule, pattern in RULES.items():
