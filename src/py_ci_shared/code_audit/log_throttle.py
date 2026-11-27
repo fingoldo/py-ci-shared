@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
@@ -13,6 +14,8 @@ __all__ = ["scan_unthrottled_hot_loop_log"]
 _LOG_METHODS = ("warning", "error", "exception", "critical")
 _THROTTLE_HINTS = ("throttle", "rate_limit", "ratelimit", "debounce")
 _BOUNDED_RETRY_HINTS = ("retr", "attempt")
+#: The text of a log call (``<name ending in log or logger>.<method>(``): a module whose text holds none has no call this scan could report.
+_LOG_CALL_TEXT = re.compile(r"(?:log|logger)\s*\.\s*(?:" + "|".join(_LOG_METHODS) + r")\s*\(", re.IGNORECASE)
 
 
 def _guard_looks_throttled(test: ast.expr) -> bool:
@@ -385,6 +388,8 @@ def scan_unthrottled_hot_loop_log(
         if tree is None:
             continue
         src_lines = _read_src_lines(py)
+        if not _LOG_CALL_TEXT.search("\n".join(src_lines)):
+            continue
         rel = py.relative_to(root).as_posix()
         _visit_if_aware(tree, 0, False, findings, rel, src_lines, _single_shot_log_calls(tree))
     return findings
