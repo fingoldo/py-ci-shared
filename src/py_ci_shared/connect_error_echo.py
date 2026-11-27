@@ -279,7 +279,9 @@ def _collect(
 ) -> tuple[list[Finding], ScanResult]:
     scan = scan_tree(root, skip=skip_set(skip_dir_names, include_tests=include_tests), use_git=use_git)
     wanted, sink_names = frozenset(callees), frozenset(sinks)
-    findings = [f for parsed in scan for f in _file_findings(parsed, wanted, sink_names, tuple(x.lower() for x in sanitizers))]
+    spelled = tuple(sorted({c.rsplit(".", 1)[-1] for c in wanted}))  # a connect call spells its final name, under any import alias or re-binding
+    lowered = tuple(x.lower() for x in sanitizers)
+    findings = [f for parsed in scan if any(name in parsed.source for name in spelled) for f in _file_findings(parsed, wanted, sink_names, lowered)]
     return sorted(findings, key=lambda f: (f.path, f.line)), scan
 
 
