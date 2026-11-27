@@ -72,6 +72,14 @@ class TestSqlVerifierCoverage:
 
 
 class TestPackageDoctests:
+    @pytest.fixture(autouse=True)
+    def _drop_imported_dtpkg(self):
+        """`_package` only clears `dtpkg` BEFORE the import; without this the imported copy outlives the test and
+        `test_package_doctests.py` (same name, other tree) sees it when xdist puts both on one worker."""
+        yield
+        for name in [n for n in sys.modules if n == "dtpkg" or n.startswith("dtpkg.")]:
+            del sys.modules[name]
+
     def _package(self, tmp_path, monkeypatch, body):
         pkg = tmp_path / "dtpkg"
         pkg.mkdir()
