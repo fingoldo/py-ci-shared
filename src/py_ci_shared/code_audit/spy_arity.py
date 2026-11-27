@@ -185,5 +185,7 @@ def scan_stale_test_spy_arity(
         if tree is None:
             continue
         src_lines = _read_src_lines(py)
+        if not any("side_effect" in line for line in src_lines):
+            continue  # a spy is found through a patch(..., side_effect=<def>) keyword
         findings.extend(_find_spy_findings_in_test_file(tree, rel, src_lines, prod_call_max))
     return findings
