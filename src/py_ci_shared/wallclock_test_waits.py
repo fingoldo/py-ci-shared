@@ -107,6 +107,8 @@ def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "ast
     for file in files:
         if not is_wallclock_test_file(file.rel):
             continue
+        if file.rel.endswith(".py") and "sleep" not in file.text and "Future.delayed" not in file.text:
+            continue  # every wait call and every text pattern for Python spells `sleep` (or the Dart `Future.delayed`): nothing to flag here
         docstrings = _docstring_lines(file.text) if file.rel.endswith(".py") else set()
         real = _python_sleep_lines(file.text) if python_mode == "ast" and file.rel.endswith(".py") else None
         for number, line in enumerate(file.text.splitlines(), start=1):
