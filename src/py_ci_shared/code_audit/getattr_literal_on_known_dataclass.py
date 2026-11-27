@@ -214,7 +214,12 @@ def scan_getattr_literal_on_known_dataclass(
     for py, tree in trees.items():
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
-        for func in walk_tree(tree):
+        nodes = walk_tree(tree)
+        # A local gets a known dataclass's type only from an annotation or a constructor call naming it, and both are ``Name`` nodes of this module: a
+        # module that never names a known dataclass has no typed local in any function, so its functions are not walked at all.
+        if known.keys().isdisjoint(n.id for n in nodes if isinstance(n, ast.Name)):
+            continue
+        for func in nodes:
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             local_types = _local_dataclass_types(func, known)
