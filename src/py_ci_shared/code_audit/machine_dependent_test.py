@@ -7,6 +7,7 @@ of the same proposal, a real clock shifted by part of a day. The two report disj
 from __future__ import annotations
 
 import ast
+import re
 from .._core.ast_try import TRY_NODES
 from pathlib import Path
 from typing import Optional, Union
@@ -64,6 +65,17 @@ _TIMER_FUNCS = frozenset({"perf_counter", "perf_counter_ns", "monotonic", "monot
 # which is exactly the failing shape. Measured over this repo's ~4900 tests: the unrestricted rule
 # fires on 7 tests of which 3 are real, and this threshold selects those 3 and nothing else.
 _WALL_CLOCK_SLEEP_SECONDS = 0.1
+
+# Text a file must contain before a scanner below can find anything in it: the spelling of the one construct the scanner reads.
+# A file without it is not walked function by function, which is most of a test tree.
+_TIMER_SPELLING = re.compile(r"[.][\s\\]*(?:" + "|".join(sorted(_TIMER_FUNCS)) + r")\b")
+_DELETE_SPELLING = re.compile(r"\bdel\b|delattr")
+
+
+def _lacks(src_lines: list[str], spelling: "str | re.Pattern[str]") -> bool:
+    """True when no line of the file spells what a scanner reads (a plain substring, or a pattern searched over the whole text)."""
+    text = "\n".join(src_lines)
+    return spelling not in text if isinstance(spelling, str) else not spelling.search(text)
 
 
 def _is_timer_call(node: ast.AST) -> bool:
@@ -177,6 +189,8 @@ def scan_wall_clock_assertion(
         if tree is None:
             continue
         src_lines = _read_src_lines(py)
+        if _lacks(src_lines, _TIMER_SPELLING):
+            continue
         rel = py.relative_to(root).as_posix()
         for fn in _test_functions(tree):
             findings.extend(_wall_clock_findings_in_fn(fn, rel, src_lines))
@@ -224,6 +238,8 @@ def scan_sleep_then_assert(
         if tree is None:
             continue
         src_lines = _read_src_lines(py)
+        if _lacks(src_lines, "sleep"):
+            continue
         rel = py.relative_to(root).as_posix()
         for fn in _test_functions(tree):
             own = _own_body_nodes(fn)
@@ -318,6 +334,8 @@ def scan_deleted_attribute_read_unconditionally(
         if tree is None:
             continue
         src_lines = _read_src_lines(py)
+        if _lacks(src_lines, _DELETE_SPELLING):
+            continue
         rel = py.relative_to(root).as_posix()
         for fn in walk_tree(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
