@@ -1,5 +1,6 @@
 {
   "accepted": {
-    "tests/test_corpus_drift_budget.py: time.sleep(30)": "the stand-in for a finder that never returns; FINDER_BUDGET_SECONDS (1 s here) cuts it off, so the sleep only runs if the budget is broken, and the test then fails on the missing error"
+    "tests/test_corpus_drift_budget.py: time.sleep(30)": "the stand-in for a finder that never returns; FINDER_BUDGET_SECONDS (1 s here) cuts it off, so the sleep only runs if the budget is broken, and the test then fails on the missing error",
+    "tests/test_embedded_postgres.py: time.sleep(0.25)": "the poll for a stopped server's port to stop answering: the operating system gives no event for a listener closing, `pg_ctl stop -w` can return before it, and the loop is bounded by a 20 s deadline that fails the test with the port named"
   }
 }
