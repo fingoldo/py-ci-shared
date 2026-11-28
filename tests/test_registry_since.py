@@ -1,7 +1,7 @@
 """``since`` in registry.toml is the first LIVE release that contains the module (the README catalogue renders it).
 
-v1.22.0 and v1.22.2 are dead tags (tagged without ``release_guard prepare``, failed verify, never published), so a module they carried says the next live
-release. Read from the tags themselves, so it needs a checkout with tag history and skips without one."""
+v1.22.0, v1.22.2 and v1.23.12 to v1.23.16 are dead tags (the first four of the 1.23 series were tagged on commits that ``release_guard prepare`` had not
+prepared, v1.23.16 failed this test over them; none was published), so a module they carried says the next live release. Read from the tags themselves, so it needs a checkout with tag history and skips without one."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from py_ci_shared.registry import load_gates
 from py_ci_shared.version_tag_currency import semver_tags
 
 REPO = Path(__file__).resolve().parents[1]
-DEAD_TAGS = frozenset({"v1.22.0", "v1.22.2"})
+DEAD_TAGS = frozenset({"v1.22.0", "v1.22.2", "v1.23.12", "v1.23.13", "v1.23.14", "v1.23.15", "v1.23.16"})
 FIRST_CHECKED = (1, 22, 3)  # older releases predate the layout this reads
 
 
