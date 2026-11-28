@@ -7,6 +7,8 @@ import re
 import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -70,6 +72,22 @@ def test_outside_a_repository_there_is_no_main_checkout(tmp_path):
     assert main_checkout_file(".env", cwd=tmp_path) is None
 
 
+_SERVER_GONE_GRACE_SECONDS = 20
+#: The first message of the PostgreSQL wire protocol a client may send: length 8, request code 80877103 (SSLRequest). A server answers one byte, `S` or `N`.
+_SSL_REQUEST = bytes.fromhex("0000000804d2162f")
+
+
+def _speaks_postgres(port: int) -> bool:
+    """Whether something on 127.0.0.1:*port* answers the SSLRequest of the Postgres protocol; a closed port, a timeout or another protocol is ``False``."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as conn:
+            conn.settimeout(2)
+            conn.sendall(_SSL_REQUEST)
+            return conn.recv(1) in (b"S", b"N")
+    except OSError:
+        return False
+
+
 @pytest.mark.skipif(find_pg_bin() is None, reason="no Postgres binaries here (PG_BIN / pgserver / PATH)")
 @pytest.mark.xdist_group("postgres")
 def test_a_real_server_starts_accepts_a_connection_and_is_gone_after():
@@ -77,9 +95,52 @@ def test_a_real_server_starts_accepts_a_connection_and_is_gone_after():
         port = int(re.search(r"port=(\d+)", dsn).group(1))  # type: ignore[union-attr]
         with socket.create_connection(("127.0.0.1", port), timeout=5):
             pass
-    # Refused on POSIX; on Windows a closed port can also time out (audit 44-T4: the OS message is not ours, so the class is the contract).
-    with pytest.raises((ConnectionRefusedError, TimeoutError)):
-        socket.create_connection(("127.0.0.1", port), timeout=2)
+    # "Gone" means nothing on that port speaks the Postgres protocol any more, within a grace period: `pg_ctl stop -w` can return before the listener of a
+    # loaded Windows machine is closed, and the port may meanwhile belong to an unrelated local process, which a bare "connection refused" check cannot tell apart.
+    deadline = time.monotonic() + _SERVER_GONE_GRACE_SECONDS
+    while _speaks_postgres(port):
+        assert time.monotonic() < deadline, f"a Postgres server still answers on port {port} {_SERVER_GONE_GRACE_SECONDS} s after the context exited"
+        time.sleep(0.25)
+
+
+def _serve_once(reply: bytes) -> "tuple[int, threading.Thread]":
+    """A one-shot loopback listener that reads the client's first message and answers *reply* (nothing when empty), and its port."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+
+    def _answer() -> None:
+        with listener:
+            conn, _ = listener.accept()
+            with conn:
+                conn.recv(8)
+                if reply:
+                    conn.sendall(reply)
+
+    thread = threading.Thread(target=_answer, daemon=True)
+    thread.start()
+    return listener.getsockname()[1], thread
+
+
+@pytest.mark.parametrize("reply", [b"N", b"S"])
+def test_a_listener_that_answers_the_ssl_request_speaks_postgres(reply):
+    port, thread = _serve_once(reply)
+    assert _speaks_postgres(port) is True
+    thread.join(timeout=5)
+
+
+def test_a_listener_of_another_protocol_does_not_speak_postgres():
+    port, thread = _serve_once(b"HTTP/1.1 400 Bad Request\r\n")
+    assert _speaks_postgres(port) is False
+    thread.join(timeout=5)
+
+
+def test_a_closed_port_does_not_speak_postgres():
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    assert _speaks_postgres(port) is False
 
 
 def test_run_hands_the_command_its_dsn(monkeypatch):
