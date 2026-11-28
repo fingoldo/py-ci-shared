@@ -230,7 +230,6 @@ def test_a_bom_audit_file_is_read(tmp_path):
     assert len(problems) == 1 and "gone.py" in problems[0]
 
 
-
 def test_fixed_disposition_must_cite_an_existing_test(tmp_path):
     """With require_test_citation, a FIXED line that names no test file is a problem, and a cited test must exist."""
     from py_ci_shared.audit_disposition_parity import find_unsupported_dispositions
